@@ -38,8 +38,8 @@ export default function CartPage() {
       {/* Tiêu đề & nút quay lại */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-border pb-6">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-white">Giỏ hàng của bạn</h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">Bạn đang có {getTotalItems()} sản phẩm trong giỏ hàng.</p>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground">Giỏ hàng của bạn</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-1">Bạn đang có {getTotalItems()} sản phẩm trong giỏ hàng.</p>
         </div>
         <Link href="/products" className="inline-flex items-center gap-1.5 text-xs sm:text-sm text-muted-foreground hover:text-foreground transition-colors">
           <ChevronLeft className="w-4 h-4" />
@@ -62,7 +62,7 @@ export default function CartPage() {
                     <span className="text-[10px] uppercase font-bold text-primary tracking-wider">
                       {item.brand}
                     </span>
-                    <h3 className="font-bold text-white text-sm sm:text-base line-clamp-1 hover:text-primary">
+                    <h3 className="font-bold text-foreground text-sm sm:text-base line-clamp-1 hover:text-primary">
                       <Link href={`/products/${item.id}`}>{item.name}</Link>
                     </h3>
                     <p className="text-muted-foreground text-xs sm:text-sm">{formatPrice(item.price)}</p>
@@ -78,7 +78,7 @@ export default function CartPage() {
                     >
                       -
                     </button>
-                    <span className="w-10 text-center text-white text-sm font-bold">{item.quantity}</span>
+                    <span className="w-10 text-center text-foreground text-sm font-bold">{item.quantity}</span>
                     <button
                       onClick={() => updateQuantity(item.id, item.quantity + 1)}
                       className="w-9 h-9 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-all font-bold cursor-pointer"
@@ -86,7 +86,7 @@ export default function CartPage() {
                       +
                     </button>
                   </div>
-                  <span className="font-bold text-white text-sm sm:text-base whitespace-nowrap min-w-[100px] text-right">
+                  <span className="font-bold text-foreground text-sm sm:text-base whitespace-nowrap min-w-[100px] text-right">
                     {formatPrice(item.price * item.quantity)}
                   </span>
                   <button
@@ -105,7 +105,7 @@ export default function CartPage() {
           <div className="flex justify-end">
             <button
               onClick={clearCart}
-              className="text-xs text-destructive hover:text-red-300 font-semibold border border-destructive/20 hover:border-destructive/40 bg-destructive/5 hover:bg-destructive/10 px-4 py-2 rounded-xl transition-all cursor-pointer"
+              className="text-xs text-destructive hover:opacity-80 font-semibold border border-destructive/20 hover:border-destructive/40 bg-destructive/5 hover:bg-destructive/10 px-4 py-2 rounded-xl transition-all cursor-pointer"
             >
               Làm trống giỏ hàng
             </button>
@@ -115,25 +115,25 @@ export default function CartPage() {
         {/* Cột phải: Tổng kết đơn hàng */}
         <div>
           <div className="rounded-2xl border border-border bg-card/40 p-6 space-y-6">
-            <h2 className="text-lg font-bold text-white border-b border-border pb-3">Tóm tắt đơn hàng</h2>
+            <h2 className="text-lg font-bold text-foreground border-b border-border pb-3">Tóm tắt đơn hàng</h2>
             
             <div className="space-y-3 text-xs sm:text-sm text-muted-foreground">
               <div className="flex justify-between">
                 <span>Số lượng sản phẩm:</span>
-                <span className="text-white font-semibold">{getTotalItems()}</span>
+                <span className="text-foreground font-semibold">{getTotalItems()}</span>
               </div>
               <div className="flex justify-between">
                 <span>Tạm tính:</span>
-                <span className="text-white font-semibold">{formatPrice(getTotalPrice())}</span>
+                <span className="text-foreground font-semibold">{formatPrice(getTotalPrice())}</span>
               </div>
               <div className="flex justify-between">
                 <span>Vận chuyển:</span>
-                <span className="text-emerald-400 font-semibold">Miễn phí giao hàng</span>
+                <span className="text-success font-semibold">Miễn phí giao hàng</span>
               </div>
             </div>
 
             <div className="border-t border-border pt-4 flex justify-between items-center">
-              <span className="font-semibold text-white">Tổng cộng:</span>
+              <span className="font-semibold text-foreground">Tổng cộng:</span>
               <span className="text-xl font-black text-primary">{formatPrice(getTotalPrice())}</span>
             </div>
 

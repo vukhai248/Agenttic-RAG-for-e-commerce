@@ -104,42 +104,42 @@ export default function CheckoutSuccessPage() {
     <div className="container mx-auto px-4 py-16 flex-1 flex flex-col items-center justify-center gap-8 max-w-lg text-center">
       {isProcessing ? (
         <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-          <span className="text-sm text-slate-400">Đang xác thực và ghi nhận đơn hàng...</span>
+          <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+          <span className="text-sm text-muted-foreground">Đang xác thực và ghi nhận đơn hàng...</span>
         </div>
       ) : (
         <>
           {/* Icon Thành Công */}
-          <div className="p-4 rounded-full bg-emerald-500/10 text-emerald-400 animate-bounce">
+          <div className="p-4 rounded-full bg-success/10 text-success animate-bounce">
             <CheckCircle2 className="w-16 h-16" />
           </div>
 
           {/* Tiêu đề thông báo */}
           <div className="space-y-2">
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-white">Đặt hàng thành công!</h1>
-            <p className="text-slate-400 text-sm">
-              Cảm ơn quý khách đã tin tưởng và mua sắm tại **Antigravity E-Shop**. Đơn hàng của bạn đã được xác nhận thành công và đang được chuẩn bị đóng gói.
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground">Đặt hàng thành công!</h1>
+            <p className="text-muted-foreground text-sm">
+              Cảm ơn quý khách đã tin tưởng và mua sắm tại Antigravity E-Shop. Đơn hàng của bạn đã được xác nhận thành công và đang được chuẩn bị đóng gói.
             </p>
           </div>
 
           {/* Chi tiết đơn hàng */}
-          <div className="w-full p-6 rounded-2xl border border-slate-900 bg-slate-900/20 text-left text-xs sm:text-sm space-y-3">
-            <h3 className="font-bold text-white border-b border-slate-800 pb-2">Chi tiết giao hàng</h3>
+          <div className="w-full p-6 rounded-2xl border border-border bg-card text-left text-xs sm:text-sm space-y-3">
+            <h3 className="font-bold text-foreground border-b border-border pb-2">Chi tiết giao hàng</h3>
             {orderId && (
               <div className="flex justify-between">
-                <span className="text-slate-500">Mã đơn hàng (DB):</span>
-                <span className="text-white font-mono font-bold truncate max-w-[200px]">{orderId}</span>
+                <span className="text-muted-foreground">Mã đơn hàng (DB):</span>
+                <span className="text-foreground font-mono font-bold truncate max-w-[200px]">{orderId}</span>
               </div>
             )}
             <div className="flex justify-between">
-              <span className="text-slate-500">Hình thức thanh toán:</span>
-              <span className="text-white font-semibold">
+              <span className="text-muted-foreground">Hình thức thanh toán:</span>
+              <span className="text-foreground font-semibold">
                 {statusParam === 'cod' ? 'Thanh toán khi nhận hàng (COD)' : 'Thẻ tín dụng (Stripe Online)'}
               </span>
             </div>
             <div className="space-y-1">
-              <span className="text-slate-500 block">Địa chỉ nhận hàng:</span>
-              <p className="text-white bg-slate-950/40 p-2.5 rounded-lg border border-slate-900 text-xs leading-relaxed">
+              <span className="text-muted-foreground block">Địa chỉ nhận hàng:</span>
+              <p className="text-foreground bg-muted p-2.5 rounded-lg border border-border text-xs leading-relaxed">
                 {decodeURIComponent(address) || 'Thông tin địa chỉ chưa cập nhật'}
               </p>
             </div>
@@ -149,14 +149,14 @@ export default function CheckoutSuccessPage() {
           <div className="flex flex-col sm:flex-row gap-4 w-full pt-4">
             <Link
               href="/account"
-              className="flex-1 flex items-center justify-center gap-2 h-12 rounded-xl border border-slate-800 hover:border-slate-700 bg-slate-900/40 text-slate-350 hover:text-white font-bold transition-all text-xs sm:text-sm"
+              className="flex-1 flex items-center justify-center gap-2 h-12 rounded-xl border border-border hover:border-muted-foreground/40 bg-card text-muted-foreground hover:text-foreground font-bold transition-all text-xs sm:text-sm"
             >
               <Eye className="w-4 h-4" />
               <span>Đơn hàng của tôi</span>
             </Link>
             <Link
               href="/products"
-              className="flex-1 flex items-center justify-center gap-2 h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold hover:shadow-lg hover:shadow-blue-500/25 active:scale-95 transition-all text-xs sm:text-sm"
+              className="flex-1 flex items-center justify-center gap-2 h-12 rounded-xl bg-primary hover:opacity-90 text-primary-foreground font-bold hover:shadow-lg hover:shadow-primary/25 active:scale-95 transition-all text-xs sm:text-sm"
             >
               <ShoppingBag className="w-4 h-4" />
               <span>Tiếp tục mua sắm</span>

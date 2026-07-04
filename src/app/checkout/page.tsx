@@ -41,6 +41,13 @@ export default function CheckoutPage() {
     checkUser();
   }, []);
 
+  // Nếu giỏ hàng trống thì quay lại trang giỏ (chạy trong effect, tránh push khi render)
+  useEffect(() => {
+    if (items.length === 0) {
+      router.push('/cart');
+    }
+  }, [items.length, router]);
+
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price);
   };
@@ -123,7 +130,6 @@ export default function CheckoutPage() {
   };
 
   if (items.length === 0) {
-    router.push('/cart');
     return null;
   }
 
@@ -137,13 +143,13 @@ export default function CheckoutPage() {
         </Link>
       </div>
 
-      <h1 className="text-2xl sm:text-3xl font-extrabold text-white border-b border-border pb-6">Thanh toán đơn hàng</h1>
+      <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground border-b border-border pb-6">Thanh toán đơn hàng</h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Cột trái + giữa: Form nhập thông tin */}
         <form onSubmit={handleCheckout} className="lg:col-span-2 space-y-6">
           {errorMsg && (
-            <div className="p-4 rounded-xl border border-red-500/20 bg-red-500/5 text-red-400 text-xs sm:text-sm flex items-center gap-3">
+            <div className="p-4 rounded-xl border border-destructive/20 bg-destructive/5 text-destructive text-xs sm:text-sm flex items-center gap-3">
               <AlertCircle className="w-5 h-5 flex-shrink-0" />
               <span>{errorMsg}</span>
             </div>
@@ -162,7 +168,7 @@ export default function CheckoutPage() {
 
           {/* Form Thông tin */}
           <div className="rounded-2xl border border-border bg-card/10 p-6 space-y-4">
-            <h2 className="text-lg font-bold text-white mb-2">1. Thông tin giao nhận hàng</h2>
+            <h2 className="text-lg font-bold text-foreground mb-2">1. Thông tin giao nhận hàng</h2>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
@@ -204,7 +210,7 @@ export default function CheckoutPage() {
 
           {/* Phương thức thanh toán */}
           <div className="rounded-2xl border border-border bg-card/10 p-6 space-y-4">
-            <h2 className="text-lg font-bold text-white mb-2">2. Phương thức thanh toán</h2>
+            <h2 className="text-lg font-bold text-foreground mb-2">2. Phương thức thanh toán</h2>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <button
@@ -212,7 +218,7 @@ export default function CheckoutPage() {
                 onClick={() => setPaymentMethod('stripe')}
                 className={`p-4 rounded-xl border flex items-center justify-between text-left transition-all ${
                   paymentMethod === 'stripe'
-                    ? 'border-primary bg-primary/5 text-white'
+                    ? 'border-primary bg-primary/5 text-foreground'
                     : 'border-border bg-background/40 text-muted-foreground hover:border-muted-foreground/40'
                 }`}
               >
@@ -233,12 +239,12 @@ export default function CheckoutPage() {
                 onClick={() => setPaymentMethod('cod')}
                 className={`p-4 rounded-xl border flex items-center justify-between text-left transition-all ${
                   paymentMethod === 'cod'
-                    ? 'border-primary bg-primary/5 text-white'
+                    ? 'border-primary bg-primary/5 text-foreground'
                     : 'border-border bg-background/40 text-muted-foreground hover:border-muted-foreground/40'
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <Truck className="w-5 h-5 text-emerald-500" />
+                  <Truck className="w-5 h-5 text-success" />
                   <div>
                     <span className="font-bold text-sm block">Thu tiền khi nhận hàng (COD)</span>
                     <span className="text-[10px] text-muted-foreground">Kiểm tra đồng kiểm và thanh toán mặt</span>
@@ -255,7 +261,7 @@ export default function CheckoutPage() {
         {/* Cột phải: Xem lại giỏ hàng */}
         <div>
           <div className="rounded-2xl border border-border bg-card/45 p-6 space-y-4 sticky top-24">
-            <h2 className="text-lg font-bold text-white border-b border-border pb-3">Giỏ hàng của bạn</h2>
+            <h2 className="text-lg font-bold text-foreground border-b border-border pb-3">Giỏ hàng của bạn</h2>
             
             {/* Danh sách items tóm tắt */}
             <div className="max-h-56 overflow-y-auto space-y-3 pr-2 scrollbar-thin">
@@ -265,7 +271,7 @@ export default function CheckoutPage() {
                     <img src={item.image} alt={item.name} className="w-full h-full object-contain" />
                   </div>
                   <div className="flex-1 space-y-0.5">
-                    <h4 className="font-semibold text-white line-clamp-1">{item.name}</h4>
+                    <h4 className="font-semibold text-foreground line-clamp-1">{item.name}</h4>
                     <div className="flex justify-between text-muted-foreground text-xs">
                       <span>SL: {item.quantity}</span>
                       <span className="text-primary font-bold">{formatPrice(item.price * item.quantity)}</span>
@@ -278,23 +284,23 @@ export default function CheckoutPage() {
             <div className="border-t border-border pt-4 space-y-2 text-xs sm:text-sm text-muted-foreground">
               <div className="flex justify-between">
                 <span>Tạm tính:</span>
-                <span className="text-white font-semibold">{formatPrice(getTotalPrice())}</span>
+                <span className="text-foreground font-semibold">{formatPrice(getTotalPrice())}</span>
               </div>
               <div className="flex justify-between">
                 <span>Vận chuyển:</span>
-                <span className="text-emerald-400 font-semibold">Miễn phí giao hàng</span>
+                <span className="text-success font-semibold">Miễn phí giao hàng</span>
               </div>
             </div>
 
             <div className="border-t border-border pt-4 flex justify-between items-center">
-              <span className="font-semibold text-white text-sm">Tổng thanh toán:</span>
+              <span className="font-semibold text-foreground text-sm">Tổng thanh toán:</span>
               <span className="text-xl font-black text-primary">{formatPrice(getTotalPrice())}</span>
             </div>
 
             <button
               onClick={handleCheckout}
               disabled={isSubmitting}
-              className="flex items-center justify-center gap-2 w-full h-12 rounded-xl bg-primary hover:opacity-90 disabled:bg-slate-800 text-primary-foreground font-bold hover:shadow-lg hover:shadow-primary/20 active:scale-95 disabled:scale-100 disabled:opacity-50 transition-all text-sm mt-4 cursor-pointer"
+              className="flex items-center justify-center gap-2 w-full h-12 rounded-xl bg-primary hover:opacity-90 disabled:bg-muted disabled:text-muted-foreground text-primary-foreground font-bold hover:shadow-lg hover:shadow-primary/20 active:scale-95 disabled:scale-100 disabled:opacity-50 transition-all text-sm mt-4 cursor-pointer"
             >
               {isSubmitting ? (
                 <>

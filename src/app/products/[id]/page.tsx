@@ -196,12 +196,12 @@ export default function ProductDetailPage() {
               <span>Giao nhanh toàn quốc</span>
             </div>
             <div className="flex flex-col items-center text-center gap-2">
-              <RefreshCw className="w-5 h-5 text-purple-500" />
+              <RefreshCw className="w-5 h-5 text-primary" />
               <span>Lỗi 1 đổi 1 nhanh chóng</span>
             </div>
           </div>
 
-          <p className="text-slate-350 text-muted-foreground text-sm leading-relaxed">
+          <p className="text-muted-foreground text-sm leading-relaxed">
             {product.description}
           </p>
 
@@ -283,7 +283,7 @@ export default function ProductDetailPage() {
                       <Star key={i} className="w-3.5 h-3.5 fill-yellow-500" />
                     ))}
                   </div>
-                  <p className="text-slate-350 text-slate-350 text-xs sm:text-sm leading-relaxed">
+                  <p className="text-muted-foreground text-xs sm:text-sm leading-relaxed">
                     {rev.comment}
                   </p>
                 </div>

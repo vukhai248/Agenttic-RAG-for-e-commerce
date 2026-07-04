@@ -332,7 +332,7 @@ export default function ProductsPage() {
                       className="w-[85%] h-[85%] object-contain transform group-hover:scale-105 transition-transform duration-300"
                     />
                     {prod.rating_avg && (
-                      <span className="absolute top-2 right-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-background/90 border border-border text-[10px] text-yellow-550 font-bold">
+                      <span className="absolute top-2 right-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-background/90 border border-border text-[10px] text-yellow-500 font-bold">
                         <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
                         <span>{prod.rating_avg}</span>
                       </span>

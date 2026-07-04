@@ -174,32 +174,32 @@ export default function ChatWidget() {
     <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
       {/* KHUNG CỬA SỔ CHAT POPUP */}
       {isOpen && (
-        <div className="mb-4 w-[360px] sm:w-[400px] h-[500px] rounded-2xl border border-slate-800 bg-slate-950 shadow-2xl shadow-blue-500/10 flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 duration-300">
+        <div className="mb-4 w-[360px] sm:w-[400px] h-[500px] rounded-2xl border border-border bg-card shadow-2xl shadow-primary/10 flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 duration-300">
           {/* HEADER CHAT */}
-          <div className="bg-slate-900 border-b border-slate-800 px-4 py-3 flex items-center justify-between">
+          <div className="bg-muted border-b border-border px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="relative">
-                <div className="bg-gradient-to-tr from-blue-500 to-indigo-600 p-1.5 rounded-lg text-white">
+                <div className="bg-primary p-1.5 rounded-lg text-primary-foreground">
                   <Bot className="w-5 h-5" />
                 </div>
-                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-slate-900 animate-pulse"></span>
+                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-success rounded-full border-2 border-card animate-pulse"></span>
               </div>
               <div>
-                <h3 className="text-sm font-bold text-white leading-tight">Trợ lý Mua sắm AI</h3>
-                <span className="text-[10px] text-slate-400">Hỗ trợ 24/7 trực tuyến</span>
+                <h3 className="text-sm font-bold text-foreground leading-tight">Trợ lý Mua sắm AI</h3>
+                <span className="text-[10px] text-muted-foreground">Hỗ trợ 24/7 trực tuyến</span>
               </div>
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={handleClearHistory}
-                className="text-xs text-slate-500 hover:text-slate-300 px-2 py-1 rounded hover:bg-slate-800 transition-colors"
+                className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-background transition-colors"
                 title="Xóa lịch sử chat"
               >
                 Xóa lịch sử
               </button>
               <button
                 onClick={() => setIsOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -211,9 +211,6 @@ export default function ChatWidget() {
             {messages.map((msg) => (
               <div
                 key={msg.id}
-                className={`flex gap-3 max-w-[85%] ${
-                  msg.role === 'user' ? 'ml-auto flex-row-reverse' : ''
-                }`}
                 className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
@@ -276,8 +273,8 @@ export default function ChatWidget() {
           <>
             <MessageSquare className="w-6 h-6 animate-pulse" />
             <span className="absolute -top-1 -right-1 flex h-4 w-4">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-4 w-4 bg-emerald-500"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-4 w-4 bg-success"></span>
             </span>
           </>
         )}

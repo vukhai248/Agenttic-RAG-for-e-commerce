@@ -73,32 +73,32 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="flex-1 flex items-center justify-center px-4 py-16 bg-gradient-to-b from-slate-950 to-slate-900 relative">
-      {/* Background blur */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-80 h-80 rounded-full bg-indigo-500/5 blur-[100px] z-0" />
+    <div className="flex-1 flex items-center justify-center px-4 py-16 bg-background relative">
+      {/* Background blur accent */}
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-80 h-80 rounded-full bg-primary/5 blur-[100px] z-0" />
 
-      <div className="w-full max-w-md rounded-2xl border border-slate-900 bg-slate-950 p-6 sm:p-8 space-y-6 relative z-10 shadow-2xl">
+      <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 sm:p-8 space-y-6 relative z-10 shadow-xl">
         <div className="text-center space-y-2">
-          <h1 className="text-2xl font-extrabold text-white">Đăng ký tài khoản</h1>
-          <p className="text-xs text-slate-500">Tạo tài khoản mua sắm và nhận tư vấn AI tức thì</p>
+          <h1 className="text-2xl font-extrabold text-foreground">Đăng ký tài khoản</h1>
+          <p className="text-xs text-muted-foreground">Tạo tài khoản mua sắm và nhận tư vấn AI tức thì</p>
         </div>
 
         {errorMsg && (
-          <div className="p-3.5 rounded-xl border border-red-500/20 bg-red-500/5 text-red-400 text-xs flex items-center gap-2.5">
+          <div className="p-3.5 rounded-xl border border-destructive/20 bg-destructive/5 text-destructive text-xs flex items-center gap-2.5">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
             <span>{errorMsg}</span>
           </div>
         )}
 
         {successMsg && (
-          <div className="p-3.5 rounded-xl border border-emerald-500/20 bg-emerald-500/5 text-emerald-400 text-xs">
+          <div className="p-3.5 rounded-xl border border-success/20 bg-success/5 text-success text-xs">
             <span>{successMsg}</span>
           </div>
         )}
 
         <form onSubmit={handleRegister} className="space-y-4">
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-400">Họ và tên</label>
+            <label className="text-xs font-semibold text-muted-foreground">Họ và tên</label>
             <div className="relative">
               <input
                 type="text"
@@ -106,14 +106,14 @@ export default function RegisterPage() {
                 placeholder="Nguyễn Văn A"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                className="w-full h-11 pl-10 pr-4 rounded-xl border border-slate-800 bg-slate-900/60 text-white placeholder-slate-600 text-sm focus:outline-none focus:border-blue-500"
+                className="w-full h-11 pl-10 pr-4 rounded-xl border border-border bg-background text-foreground placeholder-muted-foreground/60 text-sm focus:outline-none focus:border-primary transition-colors"
               />
-              <User className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-500" />
+              <User className="absolute left-3.5 top-3.5 w-4 h-4 text-muted-foreground" />
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-400">Địa chỉ Email</label>
+            <label className="text-xs font-semibold text-muted-foreground">Địa chỉ Email</label>
             <div className="relative">
               <input
                 type="email"
@@ -121,14 +121,14 @@ export default function RegisterPage() {
                 placeholder="email@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full h-11 pl-10 pr-4 rounded-xl border border-slate-800 bg-slate-900/60 text-white placeholder-slate-600 text-sm focus:outline-none focus:border-blue-500"
+                className="w-full h-11 pl-10 pr-4 rounded-xl border border-border bg-background text-foreground placeholder-muted-foreground/60 text-sm focus:outline-none focus:border-primary transition-colors"
               />
-              <Mail className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-500" />
+              <Mail className="absolute left-3.5 top-3.5 w-4 h-4 text-muted-foreground" />
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-400">Mật khẩu</label>
+            <label className="text-xs font-semibold text-muted-foreground">Mật khẩu</label>
             <div className="relative">
               <input
                 type="password"
@@ -136,14 +136,14 @@ export default function RegisterPage() {
                 placeholder="Min. 6 ký tự"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full h-11 pl-10 pr-4 rounded-xl border border-slate-800 bg-slate-900/60 text-white placeholder-slate-600 text-sm focus:outline-none focus:border-blue-500"
+                className="w-full h-11 pl-10 pr-4 rounded-xl border border-border bg-background text-foreground placeholder-muted-foreground/60 text-sm focus:outline-none focus:border-primary transition-colors"
               />
-              <Lock className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-500" />
+              <Lock className="absolute left-3.5 top-3.5 w-4 h-4 text-muted-foreground" />
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-400">Xác nhận mật khẩu</label>
+            <label className="text-xs font-semibold text-muted-foreground">Xác nhận mật khẩu</label>
             <div className="relative">
               <input
                 type="password"
@@ -151,16 +151,16 @@ export default function RegisterPage() {
                 placeholder="Nhập lại mật khẩu"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full h-11 pl-10 pr-4 rounded-xl border border-slate-800 bg-slate-900/60 text-white placeholder-slate-600 text-sm focus:outline-none focus:border-blue-500"
+                className="w-full h-11 pl-10 pr-4 rounded-xl border border-border bg-background text-foreground placeholder-muted-foreground/60 text-sm focus:outline-none focus:border-primary transition-colors"
               />
-              <Lock className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-500" />
+              <Lock className="absolute left-3.5 top-3.5 w-4 h-4 text-muted-foreground" />
             </div>
           </div>
 
           <button
             type="submit"
             disabled={isLoading}
-            className="flex items-center justify-center gap-2 w-full h-11 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-slate-850 text-white text-sm font-bold shadow-lg shadow-blue-500/15 hover:shadow-blue-500/35 active:scale-[0.98] disabled:scale-100 transition-all pt-1"
+            className="flex items-center justify-center gap-2 w-full h-11 rounded-xl bg-primary hover:opacity-90 disabled:bg-muted disabled:text-muted-foreground text-primary-foreground text-sm font-bold shadow-lg shadow-primary/15 hover:shadow-primary/30 active:scale-[0.98] disabled:scale-100 transition-all"
           >
             {isLoading ? (
               <>
@@ -176,9 +176,9 @@ export default function RegisterPage() {
           </button>
         </form>
 
-        <p className="text-center text-xs text-slate-500">
+        <p className="text-center text-xs text-muted-foreground">
           Đã có tài khoản?{' '}
-          <Link href="/auth/login" className="text-blue-500 hover:underline font-semibold">
+          <Link href="/auth/login" className="text-primary hover:underline font-semibold">
             Đăng nhập ngay
           </Link>
         </p>
