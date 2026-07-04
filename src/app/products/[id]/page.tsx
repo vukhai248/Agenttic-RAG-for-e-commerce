@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useCart } from '@/store/useCart';
 import { Star, ShoppingCart, ShieldCheck, Truck, RefreshCw, ChevronLeft } from 'lucide-react';
 import Link from 'next/link';
@@ -37,6 +37,14 @@ export default function ProductDetailPage() {
   useEffect(() => {
     const fetchProductData = async () => {
       setIsLoading(true);
+      if (!isSupabaseConfigured) {
+        const found = FALLBACK_ALL_PRODUCTS.find((p) => p.id === id) || FALLBACK_ALL_PRODUCTS[0];
+        setProduct(found);
+        setActiveImage(found.images[0]);
+        setReviews(MOCK_REVIEWS);
+        setIsLoading(false);
+        return;
+      }
       try {
         // 1. Tải chi tiết sản phẩm
         const { data: prodData, error: prodError } = await supabase

@@ -93,6 +93,7 @@ export default function Footer() {
           <div className="flex gap-4">
             <span className="hover:text-foreground cursor-pointer transition-colors">Điều khoản dịch vụ</span>
             <span className="hover:text-foreground cursor-pointer transition-colors">Bảo mật thông tin</span>
+            <Link href="/admin" className="hover:text-foreground transition-colors">Quản trị</Link>
           </div>
         </div>
       </div>

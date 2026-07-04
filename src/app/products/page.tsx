@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useCart } from '@/store/useCart';
 import { Search, SlidersHorizontal, Star, ShoppingCart, ArrowUpDown, X } from 'lucide-react';
 
@@ -57,6 +57,11 @@ export default function ProductsPage() {
   useEffect(() => {
     const fetchProducts = async () => {
       setIsLoading(true);
+      if (!isSupabaseConfigured) {
+        setProducts(FALLBACK_ALL_PRODUCTS);
+        setIsLoading(false);
+        return;
+      }
       try {
         const { data, error } = await supabase
           .from('products')

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
-import { Mail, Lock, ArrowRight, Loader2, AlertCircle, Chrome } from 'lucide-react';
+import { Mail, Lock, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -171,12 +171,17 @@ export default function LoginPage() {
           type="button"
           onClick={handleGoogleLogin}
           disabled={isGoogleLoading}
-          className="flex items-center justify-center gap-3 w-full h-11 rounded-xl border border-border bg-background hover:bg-muted text-foreground text-xs sm:text-sm font-semibold hover:border-muted-foreground/40 disabled:opacity-50 active:scale-[0.98] transition-all"
+          className="flex items-center justify-center gap-3 w-full h-11 rounded-xl border border-border bg-background hover:bg-muted text-foreground text-xs sm:text-sm font-semibold hover:border-muted-foreground/40 disabled:opacity-50 active:scale-[0.98] transition-all cursor-pointer"
         >
           {isGoogleLoading ? (
             <Loader2 className="w-4 h-4 animate-spin text-primary" />
           ) : (
-            <Chrome className="w-4 h-4 text-primary" />
+            <svg className="w-4 h-4" viewBox="0 0 24 24">
+              <path fill="#EA4335" d="M12 5.04c1.9 0 3.51.65 4.58 1.68l3.43-3.43C17.93 1.34 15.19.5 12 .5 7.42.5 3.54 3.12 1.62 6.94l3.96 3.07C6.51 7.23 9.01 5.04 12 5.04z" />
+              <path fill="#4285F4" d="M23.49 12.27c0-.82-.07-1.6-.21-2.27H12v4.51h6.44c-.28 1.48-1.12 2.73-2.38 3.58l3.96 3.07c2.32-2.14 3.47-5.3 3.47-8.89z" />
+              <path fill="#FBBC05" d="M5.58 14.81c-.24-.72-.38-1.49-.38-2.31s.14-1.59.38-2.31L1.62 7.12C.59 9.17 0 11.51 0 14s.59 4.83 1.62 6.88l3.96-3.07z" />
+              <path fill="#34A853" d="M12 23.5c3.24 0 5.97-1.07 7.96-2.92l-3.96-3.07c-1.1.74-2.51 1.18-4 1.18-2.99 0-5.49-2.19-6.42-4.97L1.62 16.8c1.92 3.82 5.8 6.7 10.38 6.7z" />
+            </svg>
           )}
           <span>Đăng nhập Google</span>
         </button>
