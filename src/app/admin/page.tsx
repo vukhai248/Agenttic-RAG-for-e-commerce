@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { Package, ShoppingBag, Plus, Pencil, Trash2, X, Loader2, LayoutDashboard, Search } from 'lucide-react';
+import { Package, ShoppingBag, Plus, Pencil, Trash2, X, Loader2, LayoutDashboard, Search, AlertCircle } from 'lucide-react';
 
 interface Product {
   id: string;
@@ -43,44 +43,85 @@ const emptyForm: Product = {
   images: ['https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=600'], rating_avg: 5,
 };
 
-export default function AdminPage() {
   const [tab, setTab] = useState<'products' | 'orders'>('products');
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [authError, setAuthError] = useState<string>('');
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState<Product>(emptyForm);
   const [saving, setSaving] = useState(false);
 
+  const router = useRouter();
+
   useEffect(() => {
-    const load = async () => {
+    const checkAdminRole = async () => {
       setIsLoading(true);
+      
+      // Nếu chưa cấu hình Supabase thì mặc định cho qua ở chế độ offline
       if (!isSupabaseConfigured) {
+        setIsAdmin(true);
         setProducts(FALLBACK_PRODUCTS);
         setOrders(MOCK_ORDERS);
         setIsLoading(false);
         return;
       }
+
       try {
-        const { data: prodData, error } = await supabase.from('products').select('*');
-        if (error || !prodData || prodData.length === 0) throw new Error('fallback');
-        setProducts(prodData);
-      } catch {
+        const { data: { user }, error } = await supabase.auth.getUser();
+
+        if (error || !user) {
+          setAuthError('Bạn chưa đăng nhập hoặc phiên đăng nhập đã hết hạn!');
+          setIsAdmin(false);
+          setTimeout(() => {
+            router.push('/auth/login');
+          }, 2000);
+          return;
+        }
+
+        // Phân quyền admin:
+        // 1. user_metadata có role === 'admin'
+        // 2. Hoặc email chứa từ 'admin' hoặc bằng 'admin@gmail.com'
+        const userRole = user.user_metadata?.role;
+        const isUserAdmin = userRole === 'admin' || user.email === 'admin@gmail.com' || user.email?.toLowerCase().includes('admin');
+
+        if (!isUserAdmin) {
+          setAuthError('Tài khoản của bạn không có đặc quyền Admin! Đang chuyển hướng...');
+          setIsAdmin(false);
+          setTimeout(() => {
+            router.push('/account');
+          }, 2500);
+          return;
+        }
+
+        setIsAdmin(true);
+        
+        // Load products và orders từ Supabase thật
+        const { data: prodData, error: prodErr } = await supabase.from('products').select('*');
+        if (!prodErr && prodData) setProducts(prodData);
+        
+        const { data: orderData, error: orderErr } = await supabase
+          .from('orders')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (!orderErr && orderData) setOrders(orderData);
+        
+      } catch (err) {
+        console.error('Lỗi phân quyền admin:', err);
         setProducts(FALLBACK_PRODUCTS);
-      }
-      try {
-        const { data: orderData, error } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
-        setOrders(orderData && orderData.length > 0 ? orderData : MOCK_ORDERS);
-      } catch {
         setOrders(MOCK_ORDERS);
+        setIsAdmin(true); // Fallback debug
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
-    load();
-  }, []);
+
+    checkAdminRole();
+  }, [router]);
 
   const formatPrice = (price: number) =>
     new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price);
@@ -140,8 +181,33 @@ export default function AdminPage() {
 
   const set = (k: keyof Product, v: any) => setForm((prev) => ({ ...prev, [k]: v }));
 
+  if (isAdmin === null) {
+    return (
+      <div className="container mx-auto px-4 py-32 text-center flex-1 flex flex-col items-center justify-center gap-3 transition-colors duration-200">
+        <Loader2 className="w-10 h-10 text-primary animate-spin" />
+        <span className="text-sm text-muted-foreground">Đang xác thực quyền truy cập Admin...</span>
+      </div>
+    );
+  }
+
+  if (isAdmin === false) {
+    return (
+      <div className="container mx-auto px-4 py-32 text-center flex-1 flex flex-col items-center justify-center gap-4 transition-colors duration-200">
+        <div className="p-4 rounded-full bg-destructive/10 text-destructive border border-destructive/20">
+          <AlertCircle className="w-12 h-12" />
+        </div>
+        <div className="space-y-2">
+          <h1 className="text-xl font-bold text-foreground">Truy cập bị từ chối</h1>
+          <p className="text-sm text-muted-foreground max-w-sm mx-auto">
+            {authError || 'Bạn không có quyền quản trị để truy cập trang này.'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="container mx-auto px-4 py-8 flex-1 space-y-8">
+    <div className="container mx-auto px-4 py-8 flex-1 space-y-8 transition-colors duration-200">
       {/* Tiêu đề */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-border pb-6">
         <div className="flex items-center gap-3">
