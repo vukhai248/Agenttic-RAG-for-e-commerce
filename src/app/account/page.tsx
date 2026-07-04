@@ -57,20 +57,10 @@ export default function AccountPage() {
   useEffect(() => {
     const fetchUserDataAndOrders = async () => {
       setIsLoading(true);
-      // Chưa cấu hình Supabase: nếu có phiên mock thì hiển thị, ngược lại về trang đăng nhập
       if (!isSupabaseConfigured) {
-        const isMockLogged = localStorage.getItem('mock_user_logged');
-        if (isMockLogged === 'true') {
-          hydrateUser({
-            id: 'mock_user_id_123456789',
-            email: 'guest.developer@gmail.com',
-            user_metadata: { full_name: 'Developer Guest', phone: '0900000000', address: '' },
-          });
-          setOrders(MOCK_ORDERS);
-        } else {
-          router.push('/auth/login');
-        }
+        console.error('Cấu hình Supabase (URL / ANON KEY) bị thiếu trong file .env.local!');
         setIsLoading(false);
+        router.push('/auth/login');
         return;
       }
       try {

@@ -57,16 +57,7 @@ export default function RegisterPage() {
       }
     } catch (err: any) {
       console.error('Lỗi đăng ký:', err);
-      if (err.message && err.message.includes('fetch')) {
-        // Fallback test mode
-        setSuccessMsg('Đăng ký chế độ Mock Test thành công! Đang chuyển hướng...');
-        localStorage.setItem('mock_user_logged', 'true');
-        setTimeout(() => {
-          router.push('/account');
-        }, 1500);
-      } else {
-        setErrorMsg(err.message || 'Có lỗi xảy ra trong quá trình đăng ký.');
-      }
+      setErrorMsg(err.message || 'Có lỗi xảy ra trong quá trình đăng ký. Vui lòng kiểm tra kết nối Supabase.');
     } finally {
       setIsLoading(false);
     }

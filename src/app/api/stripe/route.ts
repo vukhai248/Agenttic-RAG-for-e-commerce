@@ -70,8 +70,9 @@ export async function POST(request: Request) {
       );
     }
     
-    // Fallback Mock URL cho môi trường test khi chưa điền Stripe Key thực tế
-    const mockSuccessUrl = `/checkout-success?session_id=mock_session_${Date.now()}&user_id=mock_user&address=MockAddress`;
-    return NextResponse.json({ url: mockSuccessUrl, isMock: true });
+    return NextResponse.json(
+      { error: 'Lỗi thanh toán: ' + (error.message || 'Vui lòng kiểm tra lại cấu hình STRIPE_SECRET_KEY.') },
+      { status: 500 }
+    );
   }
 }

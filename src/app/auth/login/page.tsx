@@ -51,17 +51,7 @@ export default function LoginPage() {
       }
     } catch (err: any) {
       console.error('Lỗi đăng nhập:', err);
-      // Fallback cho chế độ test offline nếu chưa cấu hình Supabase Auth thực tế
-      if (err.message && err.message.includes('fetch')) {
-        setErrorMsg('Lỗi kết nối Supabase CSDL. Đang chuyển hướng chế độ Mock Test...');
-        // Mock Login: lưu trạng thái đăng nhập giả định vào localStorage
-        localStorage.setItem('mock_user_logged', 'true');
-        setTimeout(() => {
-          router.push('/account');
-        }, 1500);
-      } else {
-        setErrorMsg(err.message || 'Email hoặc Mật khẩu không chính xác.');
-      }
+      setErrorMsg(err.message || 'Email hoặc Mật khẩu không chính xác. Vui lòng kiểm tra lại kết nối CSDL Supabase.');
     } finally {
       setIsLoading(false);
     }
