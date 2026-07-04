@@ -87,7 +87,7 @@ const emptyForm: Product = {
         // 1. user_metadata có role === 'admin'
         // 2. Hoặc email chứa từ 'admin' hoặc bằng 'admin@gmail.com'
         const userRole = user.user_metadata?.role;
-        const isUserAdmin = userRole === 'admin' || user.email === 'admin@gmail.com' || user.email?.toLowerCase().includes('admin');
+        const isUserAdmin = userRole === 'admin' || user.email === 'admin@gmail.com' || user.email === 'vugiakhai2004@gmail.com' || user.email?.toLowerCase().includes('admin');
 
         if (!isUserAdmin) {
           setAuthError('Tài khoản của bạn không có đặc quyền Admin! Đang chuyển hướng...');

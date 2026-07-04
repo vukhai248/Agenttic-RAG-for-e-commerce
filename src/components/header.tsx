@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCart } from '@/store/useCart';
 import { supabase } from '@/lib/supabase';
-import { ShoppingCart, User, Search, Laptop, Smartphone, Watch, Headphones, Layers, LogOut, Sun, Moon } from 'lucide-react';
+import { ShoppingCart, User, Search, Laptop, Smartphone, Watch, Headphones, Layers, LogOut, Sun, Moon, ChevronDown, LayoutDashboard } from 'lucide-react';
 
 export default function Header() {
   const router = useRouter();
@@ -13,8 +13,22 @@ export default function Header() {
   const [searchQuery, setSearchQuery] = useState(searchParams.get('q') || '');
   const [user, setUser] = useState<any>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   
   const totalItems = useCart((state) => state.getTotalItems());
+
+  // Đóng dropdown khi click ra ngoài
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.user-profile-dropdown')) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('click', handleOutsideClick);
+    return () => document.removeEventListener('click', handleOutsideClick);
+  }, [dropdownOpen]);
 
   useEffect(() => {
     // Lấy thông tin user hiện tại từ Supabase Auth
@@ -123,25 +137,79 @@ export default function Header() {
 
           {/* HỒ SƠ CÁ NHÂN / ĐĂNG NHẬP */}
           {user ? (
-            <div className="flex items-center gap-2">
-              <Link
-                href="/account"
-                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-card border border-border hover:border-muted-foreground/35 transition-colors"
+            <div className="user-profile-dropdown relative">
+              <button
+                onClick={() => setDropdownOpen(!dropdownOpen)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-card border border-border hover:border-muted-foreground/35 transition-colors cursor-pointer"
               >
-                <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-xs font-bold text-primary-foreground uppercase">
-                  {user.email?.substring(0, 2)}
-                </div>
-                <span className="hidden lg:inline text-sm text-muted-foreground hover:text-foreground max-w-[120px] truncate">
+                {user.user_metadata?.avatar_url ? (
+                  <img
+                    src={user.user_metadata.avatar_url}
+                    alt="avatar"
+                    className="w-6 h-6 rounded-full object-cover"
+                  />
+                ) : (
+                  <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-[10px] font-bold text-primary-foreground uppercase">
+                    {user.email?.substring(0, 2)}
+                  </div>
+                )}
+                <span className="hidden sm:inline text-sm text-muted-foreground hover:text-foreground max-w-[120px] truncate font-medium">
                   {user.user_metadata?.full_name || user.email?.split('@')[0]}
                 </span>
-              </Link>
-              <button
-                onClick={handleLogout}
-                className="p-2.5 text-muted-foreground hover:text-destructive transition-colors"
-                title="Đăng xuất"
-              >
-                <LogOut className="w-5 h-5" />
+                <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
               </button>
+
+              {dropdownOpen && (
+                <div className="absolute top-full right-0 mt-2 w-64 rounded-2xl border border-border bg-card shadow-2xl py-2.5 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+                  {/* Header info */}
+                  <div className="px-4 py-2 border-b border-border mb-1.5">
+                    <p className="text-sm font-bold text-foreground truncate">
+                      {user.user_metadata?.full_name || 'Khách hàng'}
+                    </p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {user.email}
+                    </p>
+                  </div>
+
+                  {/* Actions */}
+                  <Link
+                    href="/account"
+                    onClick={() => setDropdownOpen(false)}
+                    className="flex items-center gap-2.5 px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  >
+                    <User className="w-4 h-4 text-primary" />
+                    <span>Hồ sơ cá nhân</span>
+                  </Link>
+
+                  {/* Chỉ hiển thị link Admin nếu có quyền */}
+                  {(user.user_metadata?.role === 'admin' ||
+                    user.email === 'admin@gmail.com' ||
+                    user.email === 'vugiakhai2004@gmail.com' ||
+                    user.email?.toLowerCase().includes('admin')) && (
+                    <Link
+                      href="/admin"
+                      onClick={() => setDropdownOpen(false)}
+                      className="flex items-center gap-2.5 px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    >
+                      <LayoutDashboard className="w-4 h-4 text-primary" />
+                      <span>Trang quản trị (Admin)</span>
+                    </Link>
+                  )}
+
+                  <div className="border-t border-border my-1.5"></div>
+
+                  <button
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      handleLogout();
+                    }}
+                    className="flex items-center gap-2.5 w-full text-left px-4 py-2 text-sm text-muted-foreground hover:text-destructive hover:bg-destructive/5 transition-colors cursor-pointer"
+                  >
+                    <LogOut className="w-4 h-4 text-destructive" />
+                    <span>Đăng xuất</span>
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <Link
