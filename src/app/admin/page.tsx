@@ -3615,20 +3615,29 @@ export default function AdminPage() {
         {/* PANEL: NHÂN VIÊN & NGƯỜI DÙNG (USERS) */}
         {/* ========================================== */}
         {panel === 'users' && (() => {
+          const removeUserTones = (str: string) =>
+            str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase();
+
           const filteredUsers = users.filter((u) => {
             const role = u.user_metadata?.role || 'customer';
             const isStaff = role === 'admin' || role === 'staff';
             const matchesTab = userTab === 'staff' ? isStaff : !isStaff;
-            
+
             let matchesSearch = true;
             if (userSearch.trim()) {
-              const searchLower = userSearch.trim().toLowerCase();
-              const fullName = (u.user_metadata?.full_name || '').toLowerCase();
-              const email = (u.email || '').toLowerCase();
-              const id = (u.id || '').toLowerCase();
-              matchesSearch = fullName.includes(searchLower) || email.includes(searchLower) || id.includes(searchLower);
+              const qClean = removeUserTones(userSearch.trim());
+              const queryWords = qClean.split(/\s+/).filter(Boolean);
+              const fullNameClean = removeUserTones(u.user_metadata?.full_name || '');
+              const emailClean = removeUserTones(u.email || '');
+              const idLower = (u.id || '').toLowerCase();
+              const phoneClean = removeUserTones(u.user_metadata?.phone || '');
+              const corpus = `${fullNameClean} ${emailClean} ${idLower} ${phoneClean}`;
+              const corpusWords = corpus.split(/[\s\-\/\@\.\,]+/).filter(Boolean);
+              matchesSearch = queryWords.every(qw =>
+                corpusWords.some(cw => cw.startsWith(qw)) || idLower.includes(qw)
+              );
             }
-            
+
             return matchesTab && matchesSearch;
           });
 
@@ -3854,6 +3863,22 @@ export default function AdminPage() {
                         }`}>
                           {(selectedUserDetail.user_metadata?.role || 'customer') === 'admin' ? 'Quản trị' : (selectedUserDetail.user_metadata?.role || 'customer') === 'staff' ? 'Nhân viên' : 'Khách hàng'}
                         </span>
+                      </div>
+                      <div className="flex justify-between items-center py-1.5 border-b border-border/40 font-bold">
+                        <span className="text-muted-foreground font-medium">Số điện thoại:</span>
+                        <span className="text-foreground">{selectedUserDetail.user_metadata?.phone || <span className="italic text-muted-foreground/50 text-[10px]">Chưa cung cấp</span>}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-1.5 border-b border-border/40 font-bold">
+                        <span className="text-muted-foreground font-medium">Ngày sinh:</span>
+                        <span className="text-foreground">
+                          {selectedUserDetail.user_metadata?.birthday
+                            ? new Date(selectedUserDetail.user_metadata.birthday).toLocaleDateString('vi-VN')
+                            : <span className="italic text-muted-foreground/50 text-[10px]">Chưa cung cấp</span>}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-1.5 border-b border-border/40 font-bold">
+                        <span className="text-muted-foreground font-medium">Địa chỉ:</span>
+                        <span className="text-foreground text-right max-w-[60%]">{selectedUserDetail.user_metadata?.address || <span className="italic text-muted-foreground/50 text-[10px]">Chưa cung cấp</span>}</span>
                       </div>
                       <div className="flex justify-between items-center py-1.5 border-b border-border/40 font-bold">
                         <span className="text-muted-foreground font-medium">Ngày đăng ký:</span>

@@ -22,6 +22,7 @@ export default function AccountPage() {
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
+  const [birthday, setBirthday] = useState('');
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileMsg, setProfileMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -121,6 +122,7 @@ export default function AccountPage() {
     setFullName(u.user_metadata?.full_name || '');
     setPhone(u.user_metadata?.phone || '');
     setAddress(u.user_metadata?.address || '');
+    setBirthday(u.user_metadata?.birthday || '');
   };
 
   const handleLogout = async () => {
@@ -136,19 +138,19 @@ export default function AccountPage() {
     setProfileSaving(true);
     try {
       const { error } = await supabase.auth.updateUser({
-        data: { full_name: fullName, phone, address },
+        data: { full_name: fullName, phone, address, birthday },
       });
       if (error) throw error;
       setUser((prev: any) => ({
         ...prev,
-        user_metadata: { ...prev?.user_metadata, full_name: fullName, phone, address },
+        user_metadata: { ...prev?.user_metadata, full_name: fullName, phone, address, birthday },
       }));
       setProfileMsg({ type: 'success', text: 'Cập nhật thông tin cá nhân thành công!' });
     } catch (err: any) {
       // Chế độ mock offline: cập nhật ngay trên giao diện
       setUser((prev: any) => ({
         ...prev,
-        user_metadata: { ...prev?.user_metadata, full_name: fullName, phone, address },
+        user_metadata: { ...prev?.user_metadata, full_name: fullName, phone, address, birthday },
       }));
       setProfileMsg({ type: 'success', text: 'Đã lưu thông tin (chế độ offline/mock).' });
     } finally {
@@ -433,6 +435,15 @@ export default function AccountPage() {
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 className="w-full h-11 px-4 rounded-xl border border-border bg-background text-foreground placeholder-muted-foreground/60 text-sm focus:outline-none focus:border-primary transition-colors"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground">Ngày sinh</label>
+              <input
+                type="date"
+                value={birthday}
+                onChange={(e) => setBirthday(e.target.value)}
+                className="w-full h-11 px-4 rounded-xl border border-border bg-background text-foreground text-sm focus:outline-none focus:border-primary transition-colors cursor-pointer"
               />
             </div>
             <div className="space-y-1.5">
