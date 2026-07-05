@@ -1576,10 +1576,10 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-border bg-card/25 p-3.5 flex items-center justify-between shadow-sm">
+              <div className="rounded-2xl border border-border bg-card/25 p-3.5 flex items-center justify-between shadow-sm" title="Phí giao hàng hoàn trả phát sinh khi đơn hàng bị hủy">
                 <div className="space-y-0.5">
-                  <span className="text-[10px] font-semibold text-muted-foreground block">Doanh thu bị hủy đơn</span>
-                  <span className="text-sm font-bold text-rose-500 block">{formatPrice(stats.lostRevenue)}</span>
+                  <span className="text-[10px] font-semibold text-muted-foreground block">Phí ship hoàn trả (Đang phát triển)</span>
+                  <span className="text-xs font-bold text-muted-foreground/60 block">Đợi cấu hình phí vận chuyển</span>
                 </div>
               </div>
 
