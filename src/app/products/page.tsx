@@ -9,7 +9,7 @@ import { Search, SlidersHorizontal, Star, ShoppingCart, ArrowUpDown, X, ChevronD
 
 const FALLBACK_ALL_PRODUCTS = [
   // Laptops
-  { id: 'prod-1', category: 'laptop', brand: 'Apple', name: 'MacBook Air M3 13 inch', price: 27990000, stock: 15, description: 'MacBook Air M3 phiên bản 2024 siêu mỏng nhẹ, hiệu năng cực đỉnh nhờ chip Apple M3 thế mới. Pin 18 tiếng.', specs: { cpu: 'Apple M3 8-Core', ram: '8GB', storage: '256GB' }, images: ['https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=600'], rating_avg: 4.8 },
+  { id: 'prod-1', category: 'laptop', brand: 'Apple', name: 'MacBook Air M3 13 inch', price: 27990000, stock: 15, description: 'MacBook Air M3 phiên bản 2024 siêu mỏng nhẹ, hiệu năng cực đỉnh nhờ chip Apple M3 thế hệ mới. Pin 18 tiếng.', specs: { cpu: 'Apple M3 8-Core', ram: '8GB', storage: '256GB' }, images: ['https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=600'], rating_avg: 4.8 },
   { id: 'prod-2', category: 'laptop', brand: 'Apple', name: 'MacBook Pro M3 Pro 14 inch', price: 54990000, stock: 8, description: 'MacBook Pro 14 inch trang bị chip M3 Pro mạnh mẽ dành cho lập trình viên, designer chuyên nghiệp.', specs: { cpu: 'Apple M3 Pro 11-Core', ram: '18GB', storage: '512GB' }, images: ['https://images.unsplash.com/photo-1611186871348-b1ce696e52c9?w=600'], rating_avg: 4.9 },
   { id: 'prod-3', category: 'laptop', brand: 'Dell', name: 'Dell XPS 13 Plus 9320', price: 42500000, stock: 5, description: 'Dell XPS 13 Plus sở hữu thiết kế đột phá với thanh Touch Bar ẩn và bàn phím vô cực siêu mỏng nhẹ.', specs: { cpu: 'Intel Core i7-1360P', ram: '16GB', storage: '512GB' }, images: ['https://images.unsplash.com/photo-1593642632823-8f785ba67e45?w=600'], rating_avg: 4.5 },
   { id: 'prod-4', category: 'laptop', brand: 'Asus', name: 'Asus ROG Zephyrus G14 OLED', price: 45990000, stock: 6, description: 'Laptop gaming mỏng nhẹ màn hình OLED ROG Nebula 120Hz, GPU NVIDIA RTX 4060 chiến game AAA cực mượt.', specs: { cpu: 'AMD Ryzen 7 8845HS', ram: '16GB', storage: '1TB' }, images: ['https://images.unsplash.com/photo-1603302576837-37561b2e2302?w=600'], rating_avg: 4.7 },
@@ -34,6 +34,14 @@ const FALLBACK_ALL_PRODUCTS = [
 
 const MAX_PRICE_LIMIT = 60000000;
 
+const CATEGORY_LABELS: Record<string, string> = {
+  'phone': 'Điện thoại',
+  'laptop': 'Laptop',
+  'smartwatch': 'Đồng hồ',
+  'earphone': 'Tai nghe',
+  'accessory': 'Phụ kiện'
+};
+
 function ProductsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -46,21 +54,19 @@ function ProductsContent() {
   const [filteredProducts, setFilteredProducts] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // States bộ lọc ở UI chính thức
+  // States bộ lọc ở UI chính thức (Lọc lập tức)
   const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
   const [priceRange, setPriceRange] = useState<{ min: number; max: number }>({ min: 0, max: MAX_PRICE_LIMIT });
   const [sortBy, setSortBy] = useState<string>('featured');
   const [searchTerm, setSearchTerm] = useState(queryParam);
 
-  // States quản lý dropdown & trạng thái tạm thời
-  const [activeDropdown, setActiveDropdown] = useState<'brand' | 'price' | 'sort' | null>(null);
-  const [tempSelectedBrands, setTempSelectedBrands] = useState<string[]>([]);
-  const [tempPriceRange, setTempPriceRange] = useState<{ min: number; max: number }>({ min: 0, max: MAX_PRICE_LIMIT });
+  // Trạng thái mở dropdown bộ lọc ngang
+  const [activeDropdown, setActiveDropdown] = useState<'category' | 'brand' | 'price' | 'sort' | null>(null);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const addItem = useCart((state) => state.addItem);
 
-  // 1. Tải danh sách sản phẩm
+  // 1. Tải danh sách sản phẩm từ Supabase hoặc dùng fallback
   useEffect(() => {
     const fetchProducts = async () => {
       setIsLoading(true);
@@ -88,7 +94,7 @@ function ProductsContent() {
     setSearchTerm(queryParam);
   }, [queryParam]);
 
-  // 3. Đóng dropdown khi click outside
+  // 3. Đóng các dropdown khi click outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -157,38 +163,34 @@ function ProductsContent() {
     setFilteredProducts(result);
   }, [products, queryParam, categoryParam, selectedBrands, priceRange, sortBy]);
 
-  // Đồng bộ hoá trạng thái tạm thời khi mở Dropdown
-  const openDropdown = (type: 'brand' | 'price' | 'sort') => {
-    if (activeDropdown === type) {
-      setActiveDropdown(null);
-      return;
+  // Lọc danh sách hãng (thương hiệu) khả dụng theo Loại sản phẩm đang chọn
+  const getAvailableBrands = () => {
+    let baseProducts = [...products];
+    if (categoryParam) {
+      baseProducts = baseProducts.filter(p => p.category === categoryParam);
     }
-    setActiveDropdown(type);
-    if (type === 'brand') {
-      setTempSelectedBrands([...selectedBrands]);
-    } else if (type === 'price') {
-      setTempPriceRange({ ...priceRange });
-    }
+    return Array.from(new Set(baseProducts.map((p) => p.brand))).filter(Boolean);
   };
 
-  const handleBrandTempChange = (brand: string) => {
-    if (tempSelectedBrands.includes(brand)) {
-      setTempSelectedBrands(tempSelectedBrands.filter((b) => b !== brand));
+  const handleBrandChange = (brand: string) => {
+    if (selectedBrands.includes(brand)) {
+      setSelectedBrands(selectedBrands.filter((b) => b !== brand));
     } else {
-      setTempSelectedBrands([...tempSelectedBrands, brand]);
+      setSelectedBrands([...selectedBrands, brand]);
     }
   };
 
-  // Xác nhận lưu bộ lọc hãng
-  const applyBrandFilter = () => {
-    setSelectedBrands([...tempSelectedBrands]);
+  const handleCategoryChange = (cat: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (cat) {
+      params.set('category', cat);
+    } else {
+      params.delete('category');
+    }
+    // Khi đổi loại sản phẩm, reset các thương hiệu đã chọn để tránh lỗi logic
+    setSelectedBrands([]);
     setActiveDropdown(null);
-  };
-
-  // Xác nhận lưu bộ lọc khoảng giá
-  const applyPriceFilter = () => {
-    setPriceRange({ ...tempPriceRange });
-    setActiveDropdown(null);
+    router.push(`/products?${params.toString()}`);
   };
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -229,8 +231,7 @@ function ProductsContent() {
     alert(`Đã thêm "${prod.name}" vào giỏ hàng!`);
   };
 
-  // Lấy danh sách thương hiệu độc nhất từ sản phẩm
-  const availableBrands = Array.from(new Set(products.map((p) => p.brand))).filter(Boolean);
+  const availableBrands = getAvailableBrands();
 
   return (
     <div className="container mx-auto px-4 py-8 flex-1 flex flex-col gap-6 transition-colors duration-200">
@@ -239,39 +240,80 @@ function ProductsContent() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
         <div>
           <h1 className="text-xl sm:text-2xl font-black text-foreground flex items-center gap-2">
-            <Filter className="w-5 h-5 text-red-600 dark:text-red-500" />
+            <Filter className="w-5 h-5 text-primary" />
             <span>DANH SÁCH SẢN PHẨM</span>
           </h1>
           {categoryParam && (
-            <p className="text-xs text-muted-foreground mt-1">
-              Đang xem danh mục: <span className="text-foreground font-bold uppercase">{categoryParam}</span>
+            <p className="text-xs text-muted-foreground mt-1 font-semibold">
+              Đang xem loại: <span className="text-primary uppercase font-extrabold">{CATEGORY_LABELS[categoryParam] || categoryParam}</span>
             </p>
           )}
         </div>
-        {(selectedBrands.length > 0 || priceRange.min > 0 || priceRange.max < MAX_PRICE_LIMIT || queryParam) && (
+        {(selectedBrands.length > 0 || priceRange.min > 0 || priceRange.max < MAX_PRICE_LIMIT || queryParam || categoryParam) && (
           <button
             onClick={handleClearFilters}
-            className="text-xs text-red-600 dark:text-red-500 hover:text-red-700 dark:hover:text-red-400 font-bold flex items-center gap-1.5 cursor-pointer bg-red-600/10 hover:bg-red-600/15 px-3 py-1.5 rounded-xl transition-all"
+            className="text-xs text-primary hover:text-primary/80 font-bold flex items-center gap-1.5 cursor-pointer bg-primary/10 hover:bg-primary/15 px-3 py-1.5 rounded-xl transition-all"
           >
             <X className="w-3.5 h-3.5" />
-            <span>Xóa tất cả bộ lọc</span>
+            <span>Xóa bộ lọc</span>
           </button>
         )}
       </div>
 
-      {/* THANH BỘ LỌC NGANG CHUYÊN NGHIỆP (Dropdown Popovers) */}
+      {/* THANH BỘ LỌC NGANG CHUYÊN NGHIỆP - TÌM KIẾM TỨC THÌ */}
       <div ref={dropdownRef} className="flex flex-wrap items-center gap-3 relative z-30">
         
         {/* Nút Bộ Lọc nhanh */}
-        <div className="flex items-center gap-2 px-3 py-2 bg-red-600/10 border border-red-600/20 text-red-600 dark:text-red-500 rounded-xl text-xs font-black select-none">
+        <div className="flex items-center gap-2 px-3 py-2 bg-primary/10 border border-primary/20 text-primary rounded-xl text-xs font-black select-none">
           <SlidersHorizontal className="w-3.5 h-3.5" />
           <span>Bộ lọc</span>
         </div>
 
-        {/* 1. DROP DOWN THƯƠNG HIỆU */}
+        {/* 1. DROP DOWN CHỌN LOẠI SẢN PHẨM */}
         <div className="relative">
           <button
-            onClick={() => openDropdown('brand')}
+            onClick={() => setActiveDropdown(activeDropdown === 'category' ? null : 'category')}
+            className={`flex items-center gap-1.5 px-4 py-2 border rounded-xl text-xs font-extrabold cursor-pointer transition-all ${
+              activeDropdown === 'category' || categoryParam
+                ? 'bg-primary/10 border-primary text-primary'
+                : 'bg-card border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground/35'
+            }`}
+          >
+            <span>Loại: {categoryParam ? (CATEGORY_LABELS[categoryParam] || categoryParam) : 'Tất cả'}</span>
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${activeDropdown === 'category' ? 'rotate-180' : ''}`} />
+          </button>
+
+          {activeDropdown === 'category' && (
+            <div className="absolute top-full left-0 mt-2 w-48 bg-card/95 backdrop-blur-md border border-border rounded-2xl shadow-2xl p-2 z-40 animate-in fade-in slide-in-from-top-2 duration-150">
+              <div
+                onClick={() => handleCategoryChange('')}
+                className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-xs cursor-pointer transition-colors ${
+                  !categoryParam ? 'bg-primary/10 text-primary font-black' : 'hover:bg-muted/60 text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <span>Tất cả sản phẩm</span>
+                {!categoryParam && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+              </div>
+              {Object.entries(CATEGORY_LABELS).map(([key, label]) => (
+                <div
+                  key={key}
+                  onClick={() => handleCategoryChange(key)}
+                  className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-xs cursor-pointer transition-colors ${
+                    categoryParam === key ? 'bg-primary/10 text-primary font-black' : 'hover:bg-muted/60 text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <span>{label}</span>
+                  {categoryParam === key && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 2. DROP DOWN THƯƠNG HIỆU */}
+        <div className="relative">
+          <button
+            onClick={() => setActiveDropdown(activeDropdown === 'brand' ? null : 'brand')}
             className={`flex items-center gap-1.5 px-4 py-2 border rounded-xl text-xs font-extrabold cursor-pointer transition-all ${
               activeDropdown === 'brand' || selectedBrands.length > 0
                 ? 'bg-primary/10 border-primary text-primary'
@@ -284,54 +326,46 @@ function ProductsContent() {
 
           {activeDropdown === 'brand' && (
             <div className="absolute top-full left-0 mt-2 w-64 bg-card/95 backdrop-blur-md border border-border rounded-2xl shadow-2xl p-4 z-40 animate-in fade-in slide-in-from-top-2 duration-150">
-              <h4 className="text-xs font-black uppercase text-muted-foreground tracking-wider mb-3 select-none">Chọn thương hiệu</h4>
-              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                {availableBrands.map((brand) => (
-                  <div
-                    key={brand}
-                    onClick={() => handleBrandTempChange(brand)}
-                    className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl hover:bg-muted/60 cursor-pointer transition-colors group select-none border border-transparent"
-                  >
-                    {/* Custom Checkbox */}
-                    <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
-                      tempSelectedBrands.includes(brand)
-                        ? 'bg-red-600 border-red-600 text-white'
-                        : 'border-muted-foreground/35 bg-background group-hover:border-foreground/50'
-                    }`}>
-                      {tempSelectedBrands.includes(brand) && (
-                        <Check className="w-3 h-3 stroke-[3]" />
-                      )}
+              <h4 className="text-xs font-black uppercase text-muted-foreground tracking-wider mb-3 select-none">
+                {categoryParam ? `Hãng thuộc ${CATEGORY_LABELS[categoryParam]}` : 'Chọn thương hiệu'}
+              </h4>
+              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1 custom-scroll">
+                {availableBrands.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-4">Không có thương hiệu phù hợp.</p>
+                ) : (
+                  availableBrands.map((brand) => (
+                    <div
+                      key={brand}
+                      onClick={() => handleBrandChange(brand)}
+                      className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl hover:bg-muted/60 cursor-pointer transition-colors group select-none border border-transparent"
+                    >
+                      {/* Custom Checkbox đồng bộ màu xanh thương hiệu */}
+                      <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
+                        selectedBrands.includes(brand)
+                          ? 'bg-primary border-primary text-white'
+                          : 'border-muted-foreground/35 bg-background group-hover:border-foreground/50'
+                      }`}>
+                        {selectedBrands.includes(brand) && (
+                          <Check className="w-3 h-3 stroke-[3]" />
+                        )}
+                      </div>
+                      <span className={`text-xs font-semibold transition-colors ${
+                        selectedBrands.includes(brand) ? 'text-foreground font-bold' : 'text-muted-foreground group-hover:text-foreground'
+                      }`}>
+                        {brand}
+                      </span>
                     </div>
-                    <span className={`text-xs font-semibold transition-colors ${
-                      tempSelectedBrands.includes(brand) ? 'text-foreground font-bold' : 'text-muted-foreground group-hover:text-foreground'
-                    }`}>
-                      {brand}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <div className="flex items-center gap-2 border-t border-border mt-3 pt-3">
-                <button
-                  onClick={() => setActiveDropdown(null)}
-                  className="flex-1 py-2 text-xs font-extrabold border border-border hover:bg-muted/50 rounded-xl transition-colors cursor-pointer"
-                >
-                  Đóng
-                </button>
-                <button
-                  onClick={applyBrandFilter}
-                  className="flex-1 py-2 text-xs font-extrabold bg-red-600 hover:bg-red-700 text-white rounded-xl transition-colors cursor-pointer shadow-md shadow-red-600/10"
-                >
-                  Xem kết quả
-                </button>
+                  ))
+                )}
               </div>
             </div>
           )}
         </div>
 
-        {/* 2. DROP DOWN KHOẢNG GIÁ */}
+        {/* 3. DROP DOWN KHOẢNG GIÁ */}
         <div className="relative">
           <button
-            onClick={() => openDropdown('price')}
+            onClick={() => setActiveDropdown(activeDropdown === 'price' ? null : 'price')}
             className={`flex items-center gap-1.5 px-4 py-2 border rounded-xl text-xs font-extrabold cursor-pointer transition-all ${
               activeDropdown === 'price' || priceRange.min > 0 || priceRange.max < MAX_PRICE_LIMIT
                 ? 'bg-primary/10 border-primary text-primary'
@@ -355,9 +389,9 @@ function ProductsContent() {
                 <div className="flex-1 relative">
                   <input
                     type="number"
-                    value={tempPriceRange.min}
-                    onChange={(e) => setTempPriceRange({ ...tempPriceRange, min: Math.min(Number(e.target.value), tempPriceRange.max - 500000) })}
-                    className="w-full h-10 px-3 pr-8 rounded-xl border border-border bg-background text-foreground text-xs focus:outline-none focus:border-red-600 font-extrabold transition-all"
+                    value={priceRange.min}
+                    onChange={(e) => setPriceRange({ ...priceRange, min: Math.min(Number(e.target.value), priceRange.max - 500000) })}
+                    className="w-full h-10 px-3 pr-8 rounded-xl border border-border bg-background text-foreground text-xs focus:outline-none focus:border-primary font-extrabold transition-all"
                   />
                   <span className="absolute right-3 top-3 text-[10px] text-muted-foreground font-black">đ</span>
                 </div>
@@ -365,9 +399,9 @@ function ProductsContent() {
                 <div className="flex-1 relative">
                   <input
                     type="number"
-                    value={tempPriceRange.max}
-                    onChange={(e) => setTempPriceRange({ ...tempPriceRange, max: Math.max(Number(e.target.value), tempPriceRange.min + 500000) })}
-                    className="w-full h-10 px-3 pr-8 rounded-xl border border-border bg-background text-foreground text-xs focus:outline-none focus:border-red-600 font-extrabold transition-all"
+                    value={priceRange.max}
+                    onChange={(e) => setPriceRange({ ...priceRange, max: Math.max(Number(e.target.value), priceRange.min + 500000) })}
+                    className="w-full h-10 px-3 pr-8 rounded-xl border border-border bg-background text-foreground text-xs focus:outline-none focus:border-primary font-extrabold transition-all"
                   />
                   <span className="absolute right-3 top-3 text-[10px] text-muted-foreground font-black">đ</span>
                 </div>
@@ -377,10 +411,10 @@ function ProductsContent() {
               <div className="my-6 px-1.5">
                 <div className="relative w-full h-1.5 bg-muted rounded-full">
                   <div
-                    className="absolute h-1.5 bg-red-600 dark:bg-red-500 rounded-full"
+                    className="absolute h-1.5 bg-primary rounded-full"
                     style={{
-                      left: `${(tempPriceRange.min / MAX_PRICE_LIMIT) * 100}%`,
-                      right: `${100 - (tempPriceRange.max / MAX_PRICE_LIMIT) * 100}%`
+                      left: `${(priceRange.min / MAX_PRICE_LIMIT) * 100}%`,
+                      right: `${100 - (priceRange.max / MAX_PRICE_LIMIT) * 100}%`
                     }}
                   />
                   <input
@@ -388,14 +422,14 @@ function ProductsContent() {
                     min={0}
                     max={MAX_PRICE_LIMIT}
                     step={500000}
-                    value={tempPriceRange.min}
+                    value={priceRange.min}
                     onChange={(e) => {
-                      const val = Math.min(Number(e.target.value), tempPriceRange.max - 1000000);
-                      setTempPriceRange({ ...tempPriceRange, min: val });
+                      const val = Math.min(Number(e.target.value), priceRange.max - 1000000);
+                      setPriceRange({ ...priceRange, min: val });
                     }}
                     className="absolute w-full h-1.5 top-0 left-0 appearance-none bg-transparent pointer-events-none focus:outline-none"
                     style={{
-                      zIndex: tempPriceRange.min > MAX_PRICE_LIMIT / 2 ? 5 : 3
+                      zIndex: priceRange.min > MAX_PRICE_LIMIT / 2 ? 5 : 3
                     }}
                   />
                   <input
@@ -403,38 +437,23 @@ function ProductsContent() {
                     min={0}
                     max={MAX_PRICE_LIMIT}
                     step={500000}
-                    value={tempPriceRange.max}
+                    value={priceRange.max}
                     onChange={(e) => {
-                      const val = Math.max(Number(e.target.value), tempPriceRange.min + 1000000);
-                      setTempPriceRange({ ...tempPriceRange, max: val });
+                      const val = Math.max(Number(e.target.value), priceRange.min + 1000000);
+                      setPriceRange({ ...priceRange, max: val });
                     }}
                     className="absolute w-full h-1.5 top-0 left-0 appearance-none bg-transparent pointer-events-none focus:outline-none"
                   />
                 </div>
               </div>
-
-              <div className="flex items-center gap-2 border-t border-border mt-3 pt-3">
-                <button
-                  onClick={() => setActiveDropdown(null)}
-                  className="flex-1 py-2 text-xs font-extrabold border border-border hover:bg-muted/50 rounded-xl transition-colors cursor-pointer"
-                >
-                  Đóng
-                </button>
-                <button
-                  onClick={applyPriceFilter}
-                  className="flex-1 py-2 text-xs font-extrabold bg-red-600 hover:bg-red-700 text-white rounded-xl transition-colors cursor-pointer shadow-md shadow-red-600/10"
-                >
-                  Xem kết quả
-                </button>
-              </div>
             </div>
           )}
         </div>
 
-        {/* 3. DROP DOWN SẮP XẾP */}
+        {/* 4. DROP DOWN SẮP XẾP */}
         <div className="relative ml-auto">
           <button
-            onClick={() => openDropdown('sort')}
+            onClick={() => setActiveDropdown(activeDropdown === 'sort' ? null : 'sort')}
             className={`flex items-center gap-1.5 px-4 py-2 border rounded-xl text-xs font-extrabold cursor-pointer transition-all ${
               sortBy !== 'featured'
                 ? 'bg-primary/10 border-primary text-primary'
@@ -521,12 +540,12 @@ function ProductsContent() {
               href={`/products/${prod.id}`}
               className="group bg-card hover:bg-card/75 border border-border rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full"
             >
-              {/* Ảnh */}
-              <div className="relative aspect-square w-full overflow-hidden bg-muted/35 border-b border-border/60">
+              {/* Ảnh được căn giữa với background nhạt và padding, sử dụng object-contain tránh bị tràn ảnh */}
+              <div className="relative aspect-square w-full overflow-hidden bg-card/85 p-6 border-b border-border/40 flex items-center justify-center">
                 <img
                   src={prod.images?.[0] || 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=600'}
                   alt={prod.name}
-                  className="h-full w-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
+                  className="max-h-full max-w-full object-contain group-hover:scale-105 transition-transform duration-300"
                 />
                 <span className="absolute top-3 left-3 bg-card/90 backdrop-blur-sm border border-border text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded-md text-muted-foreground">
                   {prod.brand}
@@ -542,7 +561,7 @@ function ProductsContent() {
               {/* Chi tiết */}
               <div className="p-4 flex flex-col flex-1 gap-2">
                 <span className="text-[10px] font-black text-primary uppercase tracking-wider">
-                  {prod.category}
+                  {CATEGORY_LABELS[prod.category] || prod.category}
                 </span>
                 <h3 className="text-xs sm:text-sm font-extrabold text-foreground group-hover:text-primary transition-colors line-clamp-2 min-h-[40px]">
                   {prod.name}
