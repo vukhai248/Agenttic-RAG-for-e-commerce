@@ -169,6 +169,15 @@ export default function AdminPage() {
   const formCatRef = useRef<HTMLDivElement>(null);
   const [savingProduct, setSavingProduct] = useState(false);
   const [selectedUserDetail, setSelectedUserDetail] = useState<any | null>(null);
+  const [userOrderStats, setUserOrderStats] = useState<{
+    totalOrders: number;
+    completedOrders: number;
+    cancelledOrders: number;
+    totalSpent: number;
+    totalItems: number;
+    categoryBreakdown: Record<string, number>;
+    isLoading: boolean;
+  } | null>(null);
   const [roleConfirmOpen, setRoleConfirmOpen] = useState(false);
   const [pendingRoleChange, setPendingRoleChange] = useState<{ userId: string; newRole: string } | null>(null);
   const [activeUserRoleDropdown, setActiveUserRoleDropdown] = useState<string | null>(null);
@@ -3804,7 +3813,35 @@ export default function AdminPage() {
                               </td>
                               <td className="px-4 py-3 text-right">
                                 <button
-                                  onClick={() => setSelectedUserDetail(u)}
+                                  onClick={async () => {
+                                    setSelectedUserDetail(u);
+                                    setUserOrderStats({ totalOrders: 0, completedOrders: 0, cancelledOrders: 0, totalSpent: 0, totalItems: 0, categoryBreakdown: {}, isLoading: true });
+                                    try {
+                                      const { data: ordersData } = await supabase
+                                        .from('orders')
+                                        .select('*')
+                                        .eq('user_id', u.id)
+                                        .order('created_at', { ascending: false });
+                                      const ords = ordersData || [];
+                                      const completed = ords.filter((o: any) => o.status === 'delivered' || o.status === 'completed');
+                                      const cancelled = ords.filter((o: any) => o.status === 'cancelled');
+                                      const totalSpent = completed.reduce((sum: number, o: any) => sum + (o.total || 0), 0);
+                                      // Đếm số sản phẩm và phân loại
+                                      let totalItems = 0;
+                                      const categoryBreakdown: Record<string, number> = {};
+                                      completed.forEach((o: any) => {
+                                        const items = o.items || [];
+                                        items.forEach((item: any) => {
+                                          totalItems += (item.quantity || 1);
+                                          const cat = item.category || item.cat || 'Khác';
+                                          categoryBreakdown[cat] = (categoryBreakdown[cat] || 0) + (item.quantity || 1);
+                                        });
+                                      });
+                                      setUserOrderStats({ totalOrders: ords.length, completedOrders: completed.length, cancelledOrders: cancelled.length, totalSpent, totalItems, categoryBreakdown, isLoading: false });
+                                    } catch {
+                                      setUserOrderStats(prev => prev ? { ...prev, isLoading: false } : null);
+                                    }
+                                  }}
                                   className="px-2.5 py-1 text-xs rounded-lg border border-border hover:bg-muted text-foreground font-bold cursor-pointer transition-colors"
                                 >
                                   Xem chi tiết
@@ -3885,6 +3922,74 @@ export default function AdminPage() {
                         <span className="text-foreground">
                           {selectedUserDetail.created_at ? new Date(selectedUserDetail.created_at).toLocaleDateString('vi-VN') + ' ' + new Date(selectedUserDetail.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : ''}
                         </span>
+                      </div>
+
+                      {/* ── THỐNG KÊ MUA HÀNG ── */}
+                      <div className="space-y-2 border-t border-border pt-3">
+                        <p className="text-[11px] font-black text-foreground flex items-center gap-1.5 mb-2">
+                          📊 Thống kê mua hàng
+                        </p>
+                        {userOrderStats?.isLoading ? (
+                          <div className="flex items-center justify-center py-4">
+                            <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                          </div>
+                        ) : userOrderStats ? (
+                          <>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="bg-primary/5 border border-primary/20 rounded-xl p-2.5 text-center">
+                                <div className="text-base font-black text-primary">{userOrderStats.completedOrders}</div>
+                                <div className="text-[10px] text-muted-foreground">Đơn hoàn thành</div>
+                              </div>
+                              <div className="bg-muted/40 border border-border rounded-xl p-2.5 text-center">
+                                <div className="text-base font-black text-foreground">{userOrderStats.totalOrders}</div>
+                                <div className="text-[10px] text-muted-foreground">Tổng đơn hàng</div>
+                              </div>
+                              <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-2.5 text-center">
+                                <div className="text-base font-black text-emerald-500">{userOrderStats.totalItems}</div>
+                                <div className="text-[10px] text-muted-foreground">Sản phẩm đã mua</div>
+                              </div>
+                              <div className="bg-rose-500/5 border border-rose-500/20 rounded-xl p-2.5 text-center">
+                                <div className="text-base font-black text-rose-500">{userOrderStats.cancelledOrders}</div>
+                                <div className="text-[10px] text-muted-foreground">Đơn đã hủy</div>
+                              </div>
+                            </div>
+                            <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-3 flex justify-between items-center mt-1">
+                              <span className="text-[11px] font-semibold text-muted-foreground">💰 Tổng chi tiêu (đơn hoàn thành):</span>
+                              <span className="text-sm font-black text-amber-500">{formatPrice(userOrderStats.totalSpent)}</span>
+                            </div>
+                            {Object.keys(userOrderStats.categoryBreakdown).length > 0 && (
+                              <div className="space-y-1.5 mt-1">
+                                <p className="text-[10px] font-bold text-muted-foreground">Phân loại sản phẩm đã mua:</p>
+                                {Object.entries(userOrderStats.categoryBreakdown)
+                                  .sort((a, b) => b[1] - a[1])
+                                  .map(([cat, qty]) => (
+                                    <div key={cat} className="flex justify-between items-center">
+                                      <span className="text-[11px] text-muted-foreground capitalize">{cat}</span>
+                                      <span className="text-[11px] font-bold text-foreground bg-muted px-1.5 py-0.5 rounded">{qty} sp</span>
+                                    </div>
+                                  ))}
+                              </div>
+                            )}
+                            {/* NHẬN XÉT KHÁCH HÀNG */}
+                            <div className={`rounded-xl p-2.5 border text-[10px] font-semibold mt-1 ${
+                              userOrderStats.totalSpent >= 50000000
+                                ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400'
+                                : userOrderStats.totalSpent >= 10000000
+                                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                                : userOrderStats.completedOrders === 0
+                                ? 'bg-muted/50 border-border text-muted-foreground'
+                                : 'bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400'
+                            }`}>
+                              {userOrderStats.totalSpent >= 50000000
+                                ? '🏆 Khách VIP – Tri ân & ưu đãi đặc biệt'
+                                : userOrderStats.totalSpent >= 10000000
+                                ? '⭐ Khách gắn bó – Nên duy trì ưu đãi'
+                                : userOrderStats.completedOrders === 0
+                                ? '😴 Chưa mua hàng / Ít hoạt động – Cân nhắc món hời'
+                                : '🛒 Khách tiềm năng – Tiếp tục chăm sóc'}
+                            </div>
+                          </>
+                        ) : null}
                       </div>
                     </div>
                   </div>
