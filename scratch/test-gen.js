@@ -1,84 +1,13 @@
-// scripts/run-seed.mjs
-// Script chạy seed thông minh: tự phát hiện schema và điều chỉnh
-// Chạy: node scripts/run-seed.mjs
+// scratch/test-gen.js
+// Script test generator sản phẩm điện tử để nạp 1200+ sản phẩm
 
-import { createClient } from '@supabase/supabase-js';
-import fs from 'fs';
-import path from 'path';
-
-function loadEnv() {
-  const envPath = path.resolve(process.cwd(), '.env.local');
-  if (!fs.existsSync(envPath)) {
-    console.error('❌ Không tìm thấy file .env.local ở thư mục gốc');
-    process.exit(1);
-  }
-  const content = fs.readFileSync(envPath, 'utf8');
-  const env = {};
-  content.split('\n').forEach(line => {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) return;
-    const idx = trimmed.indexOf('=');
-    if (idx === -1) return;
-    const key = trimmed.substring(0, idx).trim();
-    const val = trimmed.substring(idx + 1).trim().replace(/^['"]|['"]$/g, '');
-    env[key] = val;
-  });
-  return env;
-}
-
-const env = loadEnv();
-const SUPABASE_URL = env.NEXT_PUBLIC_SUPABASE_URL;
-const SERVICE_ROLE_KEY = env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
-  console.error('❌ Thiếu NEXT_PUBLIC_SUPABASE_URL hoặc SUPABASE_SERVICE_ROLE_KEY trong .env.local');
-  process.exit(1);
-}
-
-const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
-  auth: { autoRefreshToken: false, persistSession: false }
-});
-
-async function detectSchema() {
-  // Thử select với cột discount để biết có tồn tại không
-  const { error } = await supabase.from('products').select('discount').limit(1);
-  return !error; // true = có cột discount
-}
-
-async function detectTvConstraint() {
-  // Thử insert 1 sản phẩm tv và rollback
-  const { error } = await supabase.from('products').insert({
-    category: 'tv', brand: 'Test', name: 'Test TV', price: 1000, stock: 1,
-    description: 'Test', specs: {}, images: ['https://test.com']
-  }).select('id');
-  
-  if (error && error.message.includes('check')) {
-    return false; // constraint chưa cho phép tv
-  }
-  // Nếu insert thành công, xóa nó đi
-  if (!error) {
-    await supabase.from('products').delete().eq('name', 'Test TV').eq('brand', 'Test');
-  }
-  return true;
-}
-
-async function clearProducts() {
-  console.log('🗑️ Xóa toàn bộ sản phẩm cũ...');
-  const { error } = await supabase.from('products').delete().not('id', 'is', null);
-  if (error) throw new Error('Lỗi xóa: ' + error.message);
-  console.log('✅ Xóa sản phẩm cũ thành công');
-}
-
-// ============================================================
-// HÌNH ẢNH SẢN PHẨM CHUẨN XÁC TỪ UNSPLASH
-// ============================================================
 const IMG = {
   iphone: 'https://images.unsplash.com/photo-1695048133142-1a20484d2569?w=600',
   samsung_phone: 'https://images.unsplash.com/photo-1610945265064-0e34e5519bbf?w=600',
   xiaomi_phone: 'https://images.unsplash.com/photo-1598327105666-5b89351aff97?w=600',
   google_phone: 'https://images.unsplash.com/photo-1598300042247-d088f8ab3a91?w=600',
   other_phone: 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=600',
-  macbook: 'https://images.unsplash.com/photo-1611186871348-b1ce696e52c9?w=600',
+  macbook: 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=600',
   dell_laptop: 'https://images.unsplash.com/photo-1593642632823-8f785ba67e45?w=600',
   asus_laptop: 'https://images.unsplash.com/photo-1603302576837-37561b2e2302?w=600',
   lenovo_laptop: 'https://images.unsplash.com/photo-1588872657578-7efd1f1555ed?w=600',
@@ -100,13 +29,10 @@ const IMG = {
   other_accessory: 'https://images.unsplash.com/photo-1585776245991-cf89dd7fc73a?w=600'
 };
 
-// ============================================================
-// HÀM GENERATOR PHONG PHÚ 1200+ SẢN PHẨM
-// ============================================================
 function generateAllProducts() {
   const list = [];
   
-  // 1. PHONES (~258 SP)
+  // 1. GENERATE PHONES (~200)
   const phoneBrands = [
     { brand: 'Apple', models: ['iPhone 15 Pro Max', 'iPhone 15 Pro', 'iPhone 15 Plus', 'iPhone 15', 'iPhone 14 Pro Max', 'iPhone 14 Pro', 'iPhone 13', 'iPhone 12', 'iPhone SE Gen 3'], img: IMG.iphone },
     { brand: 'Samsung', models: ['Galaxy S24 Ultra', 'Galaxy S24+', 'Galaxy S24', 'Galaxy Z Fold6', 'Galaxy Z Flip6', 'Galaxy S23 Ultra', 'Galaxy A55', 'Galaxy A35', 'Galaxy A15'], img: IMG.samsung_phone },
@@ -124,12 +50,15 @@ function generateAllProducts() {
   phoneBrands.forEach(b => {
     b.models.forEach(model => {
       storages.forEach(storage => {
+        // Chỉ Apple/Samsung mới hay có bản 1TB
         if (storage === '1TB' && !['Apple', 'Samsung'].includes(b.brand)) return;
         
+        // Random 2 màu cho mỗi cấu hình
         for (let k = 0; k < 2; k++) {
           const color = colors[Math.floor(Math.random() * colors.length)];
           const name = `${b.brand} ${model} ${storage} ${color}`;
           
+          // Tính giá dựa trên model
           let basePrice = 12000000;
           if (model.includes('Ultra') || model.includes('Pro Max') || model.includes('Fold')) {
             basePrice = 28000000;
@@ -143,10 +72,12 @@ function generateAllProducts() {
             basePrice = 3500000;
           }
           
+          // Thêm biến đổi theo dung lượng
           if (storage === '256GB') basePrice += 2000000;
           if (storage === '512GB') basePrice += 5000000;
           if (storage === '1TB') basePrice += 10000000;
           
+          // Random chút giá lẻ
           basePrice += Math.floor(Math.random() * 9) * 100000;
           
           const discount = Math.random() > 0.3 ? Math.floor(5 + Math.random() * 20) : 0;
@@ -178,7 +109,7 @@ function generateAllProducts() {
     });
   });
 
-  // 2. LAPTOPS (~225 SP)
+  // 2. GENERATE LAPTOPS (~200)
   const laptopBrands = [
     { brand: 'Apple', models: ['MacBook Air M3 13"', 'MacBook Air M3 15"', 'MacBook Pro M3 14"', 'MacBook Pro M3 16"'], img: IMG.macbook },
     { brand: 'Dell', models: ['XPS 13 9320', 'XPS 15 9530', 'Inspiron 15', 'Latitude 5440'], img: IMG.dell_laptop },
@@ -197,6 +128,7 @@ function generateAllProducts() {
     b.models.forEach(model => {
       rams.forEach(ram => {
         ssds.forEach(ssd => {
+          // MacBook Pro thường ko có bản 8GB/256GB, Razer ko có bản 8GB
           if (ram === '8GB' && (model.includes('Pro') || b.brand === 'Razer' || model.includes('Titan'))) return;
 
           const name = `${b.brand} ${model} (${ram} RAM, ${ssd} SSD)`;
@@ -210,13 +142,13 @@ function generateAllProducts() {
             basePrice = 28000000;
           } else if (model.includes('Inspiron') || model.includes('Pavilion') || model.includes('Victus') || model.includes('Katana')) {
             basePrice = 17000000;
-          } else if (model.includes('Slim') || model.includes('Modern')) {
+          } else if (model.includes('Slim') || model.includes('Modern') || model.includes('Modern')) {
             basePrice = 12000000;
           }
 
           if (ram === '16GB') basePrice += 2500000;
           if (ram === '32GB') basePrice += 6000000;
-          if (ssd === '512GB') basePrice += 1500000;
+          if (ssd === '512GB') basePrice += 150000;
           if (ssd === '1TB') basePrice += 4000000;
 
           basePrice += Math.floor(Math.random() * 9) * 100000;
@@ -250,7 +182,7 @@ function generateAllProducts() {
     });
   });
 
-  // 3. TV (~144 SP)
+  // 3. GENERATE TV (~200)
   const tvBrands = [
     { brand: 'Samsung', models: ['Neo QLED 8K', 'Neo QLED 4K', 'QLED 4K', 'Crystal UHD', 'The Frame', 'UHD 4K Slim'], img: IMG.tv_samsung },
     { brand: 'LG', models: ['OLED evo C4', 'OLED G4 Gallery', 'QNED 4K', 'NanoCell 4K', 'UHD 4K Smart', 'UHD 4K ThinQ'], img: IMG.tv_lg },
@@ -308,7 +240,7 @@ function generateAllProducts() {
     });
   });
 
-  // 4. EARPHONES (~168 SP)
+  // 4. GENERATE EARPHONES (~200)
   const earphoneBrands = [
     { brand: 'Apple', models: ['AirPods Pro Gen 2', 'AirPods Max', 'AirPods Gen 4 ANC', 'AirPods Gen 4'], img: IMG.airpods },
     { brand: 'Sony', models: ['WF-1000XM5 Earbuds', 'WH-1000XM5 Headphone', 'LinkBuds S', 'WH-CH720N'], img: IMG.sony_headphone },
@@ -324,6 +256,7 @@ function generateAllProducts() {
 
   earphoneBrands.forEach(b => {
     b.models.forEach(model => {
+      // Mỗi model sinh ra các phiên bản màu khác nhau
       earphoneColors.forEach(color => {
         const name = `${b.brand} ${model} (${color})`;
         
@@ -366,7 +299,7 @@ function generateAllProducts() {
     });
   });
 
-  // 5. SMARTWATCH (~119 SP)
+  // 5. GENERATE SMARTWATCH (~150)
   const watchBrands = [
     { brand: 'Apple', models: ['Watch Ultra 2 Titanium 49mm', 'Watch Series 9 GPS 45mm', 'Watch Series 9 41mm', 'Watch SE Gen 2 44mm'], img: IMG.apple_watch },
     { brand: 'Samsung', models: ['Galaxy Watch Ultra LTE 47mm', 'Galaxy Watch7 LTE 44mm', 'Galaxy Watch6 Classic 47mm'], img: IMG.samsung_watch },
@@ -380,6 +313,7 @@ function generateAllProducts() {
 
   watchBrands.forEach(b => {
     b.models.forEach(model => {
+      // Mỗi model sinh 7 loại dây đeo khác nhau
       watchStraps.forEach(strap => {
         const name = `${b.brand} ${model} (${strap})`;
         
@@ -424,7 +358,7 @@ function generateAllProducts() {
     });
   });
 
-  // 6. ACCESSORY (~264 SP)
+  // 6. GENERATE ACCESSORY (~250)
   const accBrands = [
     { brand: 'Anker', models: ['Prime GaN 100W Charger', '737 GaN 120W Charger', 'Nano 30W USB-C', 'Power Bank 10000mAh 30W', 'Power Bank 20000mAh 65W'], img: IMG.anker_accessory },
     { brand: 'Logitech', models: ['MX Master 3S Mouse', 'MX Keys S Keyboard', 'MX Anywhere 3S Mouse', 'G Pro X Superlight 2 Mouse', 'StreamCam Full HD', 'MX Brio 4K Webcam'], img: IMG.logitech_accessory },
@@ -436,6 +370,7 @@ function generateAllProducts() {
 
   accBrands.forEach(b => {
     b.models.forEach(model => {
+      // Mỗi mẫu sinh ra 12 sản phẩm với màu sắc, bao bì hoặc tùy chọn chiều dài cáp khác nhau
       for (let k = 1; k <= 12; k++) {
         const optionLabel = k % 2 === 0 ? 'Màu Đen' : 'Màu Trắng/Xám';
         const name = `${b.brand} ${model} (${optionLabel} - Pack ${k})`;
@@ -482,96 +417,11 @@ function generateAllProducts() {
   return list;
 }
 
-async function seed(productsToSeed, hasDiscount) {
-  const BATCH_SIZE = 50;
-  let total = 0;
-  
-  for (let i = 0; i < productsToSeed.length; i += BATCH_SIZE) {
-    const batch = productsToSeed.slice(i, i + BATCH_SIZE).map(prod => {
-      if (!hasDiscount) {
-        const { discount, original_price, ...rest } = prod;
-        return rest;
-      }
-      return prod;
-    });
-    
-    const { data, error } = await supabase.from('products').insert(batch).select('id');
-    
-    if (error) {
-      console.error(`❌ Lỗi batch ${Math.floor(i/BATCH_SIZE)+1}:`, error.message);
-      // Thử từng cái
-      for (const prod of batch) {
-        const insertData = hasDiscount ? prod : (() => { const { discount, original_price, ...r } = prod; return r; })();
-        const { error: e2 } = await supabase.from('products').insert(insertData);
-        if (e2) {
-          console.error(`  ❌ "${prod.name}": ${e2.message}`);
-        } else {
-          total++;
-        }
-      }
-    } else {
-      total += data.length;
-      const batchNum = Math.floor(i/BATCH_SIZE)+1;
-      const cat = [...new Set(batch.map(p => p.category))].join('/');
-      console.log(`✅ Batch ${batchNum}: ${data.length} SP [${cat}] (tổng: ${total}/${productsToSeed.length})`);
-    }
-  }
-  return total;
-}
-
-async function main() {
-  console.log('🚀 BẮT ĐẦU SEED DATABASE\n');
-  
-  // Kiểm tra schema
-  console.log('🔍 Kiểm tra schema database...');
-  const hasDiscount = await detectSchema();
-  const hasTv = await detectTvConstraint();
-  console.log(`  - Cột discount/original_price: ${hasDiscount ? '✅ Có' : '❌ Chưa có'}`);
-  console.log(`  - Hỗ trợ category TV: ${hasTv ? '✅ Có' : '❌ Chưa có'}\n`);
-  
-  if (!hasDiscount) {
-    console.log('⚠️ CẢNH BÁO: Cột discount/original_price chưa tồn tại!');
-    console.log('   Sẽ seed KHÔNG bao gồm discount/original_price.');
-    console.log('   👉 Hãy chạy alter_v2.sql trong Supabase SQL Editor trước, rồi chạy lại script này.\n');
-  }
-  
-  if (!hasTv) {
-    console.log('⚠️ CẢNH BÁO: Constraint products_category_check chưa cho phép category "tv"!');
-    console.log('   Sẽ BỎ QUA tất cả sản phẩm TV.');
-    console.log('   👉 Hãy chạy alter_v2.sql trong Supabase SQL Editor trước, rồi chạy lại script này.\n');
-  }
-  
-  const allProducts = generateAllProducts();
-  const productsToSeed = hasTv 
-    ? allProducts 
-    : allProducts.filter(p => p.category !== 'tv');
-  
-  const categoryCounts = productsToSeed.reduce((acc, p) => {
-    acc[p.category] = (acc[p.category] || 0) + 1; return acc;
-  }, {});
-  console.log(`📊 Phân bổ: ${JSON.stringify(categoryCounts)}`);
-  console.log(`📦 Tổng sản phẩm sẽ seed: ${productsToSeed.length}\n`);
-  
-  // Xóa sản phẩm cũ
-  await clearProducts();
-  
-  // Seed
-  const inserted = await seed(productsToSeed, hasDiscount);
-  
-  // Verify
-  const { count } = await supabase.from('products').select('*', { count: 'exact', head: true });
-  
-  console.log('\n🎉 SEED HOÀN TẤT!');
-  console.log(`✅ Đã insert: ${inserted} sản phẩm`);
-  console.log(`📊 Số lượng trong DB: ${count} sản phẩm`);
-  
-  if (!hasDiscount) {
-    console.log('\n📋 BƯỚC TIẾP THEO:');
-    console.log('1. Mở Supabase Dashboard → SQL Editor');
-    console.log('2. Chạy file alter_v2.sql');
-    console.log('3. Chạy lại: node scripts/run-seed.mjs');
-    console.log('4. Lần này sẽ có đầy đủ discount, original_price và category TV!');
-  }
-}
-
-main().catch(console.error);
+// Chạy test thử số lượng
+const result = generateAllProducts();
+console.log('Tổng sản phẩm sinh ra:', result.length);
+const countMap = {};
+result.forEach(p => {
+  countMap[p.category] = (countMap[p.category] || 0) + 1;
+});
+console.log('Phân bổ danh mục:', countMap);

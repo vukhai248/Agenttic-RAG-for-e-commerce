@@ -84,8 +84,23 @@ function ProductsContent() {
         if (error) throw error;
         setProducts(data || []);
       } catch (err) {
-        console.warn('Lỗi kết nối CSDL:', err);
-        setProducts([]);
+        console.warn('⚠️ Lỗi lấy dữ liệu với cột discount/original_price (có thể do chưa chạy SQL migration):', err);
+        try {
+          // Thử lấy các cột cơ bản của schema cũ
+          const { data, error } = await supabase.from('products').select('id,category,brand,name,price,stock,description,specs,images,rating_avg,created_at');
+          if (error) throw error;
+          
+          // Gán mặc định discount = 0 và original_price = price để tránh lỗi giao diện
+          const mappedData = (data || []).map(p => ({
+            ...p,
+            discount: 0,
+            original_price: p.price
+          }));
+          setProducts(mappedData);
+        } catch (err2) {
+          console.error('❌ Lỗi kết nối CSDL hoàn toàn, chuyển sang dùng dữ liệu fallback:', err2);
+          setProducts(FALLBACK_ALL_PRODUCTS);
+        }
       } finally {
         setIsLoading(false);
       }
