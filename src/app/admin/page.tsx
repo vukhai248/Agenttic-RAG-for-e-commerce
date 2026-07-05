@@ -172,6 +172,8 @@ export default function AdminPage() {
   const [roleConfirmOpen, setRoleConfirmOpen] = useState(false);
   const [pendingRoleChange, setPendingRoleChange] = useState<{ userId: string; newRole: string } | null>(null);
   const [activeUserRoleDropdown, setActiveUserRoleDropdown] = useState<string | null>(null);
+  const [userSearch, setUserSearch] = useState('');
+  const [userTab, setUserTab] = useState<'staff' | 'customer'>('staff');
 
   // Tags Pool & Variant Specs States
   const [availableTags, setAvailableTags] = useState<VariantTag[]>([]);
@@ -3612,46 +3614,111 @@ export default function AdminPage() {
         {/* ========================================== */}
         {/* PANEL: NHÂN VIÊN & NGƯỜI DÙNG (USERS) */}
         {/* ========================================== */}
-        {panel === 'users' && (
-          <div className="space-y-4">
-            <div className="border-b border-border pb-4 flex justify-between items-center">
-              <div>
-                <h1 className="text-xl sm:text-2xl font-black text-foreground">Nhân viên & Khách hàng</h1>
-                <p className="text-xs text-muted-foreground">Danh sách tài khoản đã đăng ký và phân loại vai trò (Role)</p>
-              </div>
-              <button 
-                onClick={fetchUsersList}
-                disabled={isUsersLoading}
-                className="p-2.5 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-50 transition-all cursor-pointer"
-                title="Làm mới"
-              >
-                <RefreshCw className={`w-4 h-4 ${isUsersLoading ? 'animate-spin' : ''}`} />
-              </button>
-            </div>
+        {panel === 'users' && (() => {
+          const filteredUsers = users.filter((u) => {
+            const role = u.user_metadata?.role || 'customer';
+            const isStaff = role === 'admin' || role === 'staff';
+            const matchesTab = userTab === 'staff' ? isStaff : !isStaff;
+            
+            let matchesSearch = true;
+            if (userSearch.trim()) {
+              const searchLower = userSearch.trim().toLowerCase();
+              const fullName = (u.user_metadata?.full_name || '').toLowerCase();
+              const email = (u.email || '').toLowerCase();
+              const id = (u.id || '').toLowerCase();
+              matchesSearch = fullName.includes(searchLower) || email.includes(searchLower) || id.includes(searchLower);
+            }
+            
+            return matchesTab && matchesSearch;
+          });
 
-            {isUsersLoading ? (
-              <div className="flex items-center justify-center py-20">
-                <Loader2 className="w-8 h-8 text-primary animate-spin" />
+          return (
+            <div className="space-y-4">
+              <div className="border-b border-border pb-4 flex justify-between items-center">
+                <div>
+                  <h1 className="text-xl sm:text-2xl font-black text-foreground">Nhân viên & Khách hàng</h1>
+                  <p className="text-xs text-muted-foreground">Danh sách tài khoản đã đăng ký và phân loại vai trò (Role)</p>
+                </div>
+                <button 
+                  onClick={fetchUsersList}
+                  disabled={isUsersLoading}
+                  className="p-2.5 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-50 transition-all cursor-pointer"
+                  title="Làm mới"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isUsersLoading ? 'animate-spin' : ''}`} />
+                </button>
               </div>
-            ) : (
-              <div className="flex flex-col lg:flex-row gap-6 items-start relative w-full">
-                {/* CỘT TRÁI: DANH SÁCH NGƯỜI DÙNG */}
-                <div className={`space-y-4 transition-all duration-300 ${selectedUserDetail ? 'flex-1 min-w-0' : 'w-full'}`}>
-                  <div className="rounded-2xl border border-border overflow-hidden overflow-x-auto">
-                    <table className="w-full text-sm min-w-[500px]">
-                      <thead className="bg-muted/50 text-muted-foreground text-xs uppercase">
-                        <tr>
-                          <th className="text-left font-semibold px-4 py-3">Người dùng</th>
-                          {!selectedUserDetail && <th className="text-left font-semibold px-4 py-3">Email</th>}
-                          {!selectedUserDetail && <th className="text-left font-semibold px-4 py-3">Đăng ký ngày</th>}
-                          <th className="text-left font-semibold px-4 py-3">Quyền hạn (Role)</th>
-                          <th className="text-right font-semibold px-4 py-3">Gán Role</th>
-                          <th className="text-right font-semibold px-4 py-3">Thao tác</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border">
-                        {users.map((u) => {
-                          const role = u.user_metadata?.role || 'customer';
+
+              {/* Ô TÌM KIẾM & TAB BÊN TRÊN BẢNG */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-card/25 border border-border/80 p-3.5 rounded-2xl">
+                {/* Tabs */}
+                <div className="flex bg-muted/60 p-1 rounded-xl border border-border/50 gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setUserTab('staff')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      userTab === 'staff'
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    💼 Nhân viên / Admin ({users.filter(u => {
+                      const r = u.user_metadata?.role || 'customer';
+                      return r === 'admin' || r === 'staff';
+                    }).length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUserTab('customer')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      userTab === 'customer'
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    👤 Khách hàng ({users.filter(u => {
+                      const r = u.user_metadata?.role || 'customer';
+                      return r !== 'admin' && r !== 'staff';
+                    }).length})
+                  </button>
+                </div>
+
+                {/* Ô tìm kiếm */}
+                <div className="relative w-full sm:w-64">
+                  <input
+                    type="text"
+                    value={userSearch}
+                    onChange={(e) => setUserSearch(e.target.value)}
+                    placeholder="Tìm theo tên, email, ID..."
+                    className="w-full h-9 pl-9 pr-3 rounded-xl border border-border bg-background text-foreground text-xs focus:outline-none focus:border-primary transition-colors"
+                  />
+                  <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
+                </div>
+              </div>
+
+              {isUsersLoading ? (
+                <div className="flex items-center justify-center py-20">
+                  <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                </div>
+              ) : (
+                <div className="flex flex-col lg:flex-row gap-6 items-start relative w-full">
+                  {/* CỘT TRÁI: DANH SÁCH NGƯỜI DÙNG */}
+                  <div className={`space-y-4 transition-all duration-300 ${selectedUserDetail ? 'flex-1 min-w-0' : 'w-full'}`}>
+                    <div className="rounded-2xl border border-border overflow-x-auto overflow-y-visible custom-scroll min-h-[280px]">
+                      <table className="w-full text-sm min-w-[500px] overflow-visible">
+                        <thead className="bg-muted/50 text-muted-foreground text-xs uppercase">
+                          <tr>
+                            <th className="text-left font-semibold px-4 py-3">Người dùng</th>
+                            {!selectedUserDetail && <th className="text-left font-semibold px-4 py-3">Email</th>}
+                            {!selectedUserDetail && <th className="text-left font-semibold px-4 py-3">Đăng ký ngày</th>}
+                            <th className="text-left font-semibold px-4 py-3">Quyền hạn (Role)</th>
+                            <th className="text-right font-semibold px-4 py-3">Gán Role</th>
+                            <th className="text-right font-semibold px-4 py-3">Thao tác</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border overflow-visible">
+                          {filteredUsers.map((u) => {
+                            const role = u.user_metadata?.role || 'customer';
                           return (
                             <tr key={u.id} className={`hover:bg-muted/30 transition-colors ${selectedUserDetail?.id === u.id ? 'bg-primary/5 border-l-2 border-l-primary' : ''}`}>
                               <td className="px-4 py-3">
@@ -3800,7 +3867,8 @@ export default function AdminPage() {
               </div>
             )}
           </div>
-        )}
+        );
+      })()}
 
         {/* ========================================== */}
         {/* PANEL: HỖ TRỢ KHÁCH HÀNG (TICKETS) */}
