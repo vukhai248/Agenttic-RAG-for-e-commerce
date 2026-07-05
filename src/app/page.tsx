@@ -131,10 +131,10 @@ const MEGA_MENU_DATA: MegaMenuData = {
       {
         title: 'Chọn theo mức giá',
         items: [
-          { label: 'Dưới 5.000.000đ', href: '/products?category=phone' },
-          { label: 'Từ 5.000.000đ - 10.000.000đ', href: '/products?category=phone' },
-          { label: 'Từ 10.000.000đ - 20.000.000đ', href: '/products?category=phone' },
-          { label: 'Trên 20.000.000đ', href: '/products?category=phone' }
+          { label: 'Dưới 5.000.000đ', href: '/products?category=phone&max=5000000' },
+          { label: 'Từ 5.000.000đ - 10.000.000đ', href: '/products?category=phone&min=5000000&max=10000000' },
+          { label: 'Từ 10.000.000đ - 20.000.000đ', href: '/products?category=phone&min=10000000&max=20000000' },
+          { label: 'Trên 20.000.000đ', href: '/products?category=phone&min=20000000' }
         ]
       },
       {
@@ -160,12 +160,11 @@ const MEGA_MENU_DATA: MegaMenuData = {
         ]
       },
       {
-        title: 'Nhu cầu sử dụng',
+        title: 'Chọn theo mức giá',
         items: [
-          { label: 'Văn phòng, Học tập', href: '/products?category=laptop' },
-          { label: 'Gaming, Chiến game AAA', href: '/products?category=laptop' },
-          { label: 'Đồ họa, Lập trình chuyên nghiệp', href: '/products?category=laptop' },
-          { label: 'Mỏng nhẹ, Sang trọng', href: '/products?category=laptop' }
+          { label: 'Dưới 15 triệu', href: '/products?category=laptop&max=15000000' },
+          { label: 'Từ 15 - 30 triệu', href: '/products?category=laptop&min=15000000&max=30000000' },
+          { label: 'Trên 30 triệu', href: '/products?category=laptop&min=30000000' }
         ]
       },
       {
@@ -190,12 +189,11 @@ const MEGA_MENU_DATA: MegaMenuData = {
         ]
       },
       {
-        title: 'Phân loại dòng máy',
+        title: 'Chọn theo mức giá',
         items: [
-          { label: 'Thể thao chuyên nghiệp', href: '/products?category=smartwatch' },
-          { label: 'Thời trang, Công sở', href: '/products?category=smartwatch' },
-          { label: 'Hỗ trợ GPS độc lập', href: '/products?category=smartwatch' },
-          { label: 'Pin trâu trên 14 ngày', href: '/products?category=smartwatch' }
+          { label: 'Dưới 5 triệu', href: '/products?category=smartwatch&max=5000000' },
+          { label: 'Từ 5 - 15 triệu', href: '/products?category=smartwatch&min=5000000&max=15000000' },
+          { label: 'Trên 15 triệu', href: '/products?category=smartwatch&min=15000000' }
         ]
       },
       {
@@ -219,11 +217,11 @@ const MEGA_MENU_DATA: MegaMenuData = {
         ]
       },
       {
-        title: 'Kiểu dáng tai nghe',
+        title: 'Chọn theo mức giá',
         items: [
-          { label: 'True Wireless (In-Ear)', href: '/products?category=earphone' },
-          { label: 'Chụp tai (Over-Ear)', href: '/products?category=earphone' },
-          { label: 'Chống ồn chủ động ANC', href: '/products?category=earphone' }
+          { label: 'Dưới 2 triệu', href: '/products?category=earphone&max=2000000' },
+          { label: 'Từ 2 - 5 triệu', href: '/products?category=earphone&min=2000000&max=5000000' },
+          { label: 'Trên 5 triệu', href: '/products?category=earphone&min=5000000' }
         ]
       },
       {
@@ -247,11 +245,11 @@ const MEGA_MENU_DATA: MegaMenuData = {
         ]
       },
       {
-        title: 'Nhóm phụ kiện',
+        title: 'Chọn theo mức giá',
         items: [
-          { label: 'Củ sạc, Cáp sạc nhanh GaN', href: '/products?category=accessory' },
-          { label: 'Chuột không dây, Bàn phím', href: '/products?category=accessory' },
-          { label: 'Ốp lưng, Kính cường lực', href: '/products?category=accessory' }
+          { label: 'Dưới 500k', href: '/products?category=accessory&max=500000' },
+          { label: 'Từ 500k - 1.5 triệu', href: '/products?category=accessory&min=500000&max=1500000' },
+          { label: 'Trên 1.5 triệu', href: '/products?category=accessory&min=1500000' }
         ]
       },
       {
@@ -390,9 +388,14 @@ export default function HomePage() {
                 const Icon = item.icon;
                 const isHovered = hoveredCategory === item.slug;
                 
+                const targetHref = ['pc', 'tv', 'trade-in', 'used-items', 'promo'].includes(item.slug)
+                  ? '/products'
+                  : `/products?category=${item.slug}`;
+
                 return (
-                  <div
+                  <Link
                     key={item.slug}
+                    href={targetHref}
                     onMouseEnter={() => {
                       if (MEGA_MENU_DATA[item.slug]) {
                         setHoveredCategory(item.slug);
@@ -411,7 +414,7 @@ export default function HomePage() {
                       <span className="text-xs font-semibold">{item.name}</span>
                     </div>
                     <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/60" />
-                  </div>
+                  </Link>
                 );
               })}
 

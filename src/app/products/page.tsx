@@ -50,6 +50,8 @@ function ProductsContent() {
   const queryParam = searchParams.get('q') || '';
   const categoryParam = searchParams.get('category') || '';
   const brandParam = searchParams.get('brand') || '';
+  const minParam = searchParams.get('min') || '';
+  const maxParam = searchParams.get('max') || '';
 
   const [products, setProducts] = useState<any[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<any[]>([]);
@@ -103,6 +105,13 @@ function ProductsContent() {
       setSelectedBrands([]);
     }
   }, [brandParam]);
+
+  // Đồng bộ hóa khoảng giá từ URL
+  useEffect(() => {
+    const minVal = minParam ? Number(minParam) : 0;
+    const maxVal = maxParam ? Number(maxParam) : MAX_PRICE_LIMIT;
+    setPriceRange({ min: minVal, max: maxVal });
+  }, [minParam, maxParam]);
 
   // 3. Đóng các dropdown khi click outside
   useEffect(() => {
@@ -195,6 +204,21 @@ function ProductsContent() {
       params.set('brand', newBrands.join(','));
     } else {
       params.delete('brand');
+    }
+    router.push(`/products?${params.toString()}`);
+  };
+
+  const handlePriceChange = (min: number, max: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (min > 0) {
+      params.set('min', min.toString());
+    } else {
+      params.delete('min');
+    }
+    if (max < MAX_PRICE_LIMIT) {
+      params.set('max', max.toString());
+    } else {
+      params.delete('max');
     }
     router.push(`/products?${params.toString()}`);
   };
@@ -409,7 +433,7 @@ function ProductsContent() {
                   <input
                     type="number"
                     value={priceRange.min}
-                    onChange={(e) => setPriceRange({ ...priceRange, min: Math.min(Number(e.target.value), priceRange.max - 500000) })}
+                    onChange={(e) => handlePriceChange(Math.min(Number(e.target.value), priceRange.max - 500000), priceRange.max)}
                     className="w-full h-10 px-3 pr-8 rounded-xl border border-border bg-background text-foreground text-xs focus:outline-none focus:border-primary font-extrabold transition-all"
                   />
                   <span className="absolute right-3 top-3 text-[10px] text-muted-foreground font-black">đ</span>
@@ -419,7 +443,7 @@ function ProductsContent() {
                   <input
                     type="number"
                     value={priceRange.max}
-                    onChange={(e) => setPriceRange({ ...priceRange, max: Math.max(Number(e.target.value), priceRange.min + 500000) })}
+                    onChange={(e) => handlePriceChange(priceRange.min, Math.max(Number(e.target.value), priceRange.min + 500000))}
                     className="w-full h-10 px-3 pr-8 rounded-xl border border-border bg-background text-foreground text-xs focus:outline-none focus:border-primary font-extrabold transition-all"
                   />
                   <span className="absolute right-3 top-3 text-[10px] text-muted-foreground font-black">đ</span>
@@ -444,7 +468,7 @@ function ProductsContent() {
                     value={priceRange.min}
                     onChange={(e) => {
                       const val = Math.min(Number(e.target.value), priceRange.max - 1000000);
-                      setPriceRange({ ...priceRange, min: val });
+                      handlePriceChange(val, priceRange.max);
                     }}
                     className="absolute w-full h-1.5 top-0 left-0 appearance-none bg-transparent pointer-events-none focus:outline-none"
                     style={{
@@ -459,7 +483,7 @@ function ProductsContent() {
                     value={priceRange.max}
                     onChange={(e) => {
                       const val = Math.max(Number(e.target.value), priceRange.min + 1000000);
-                      setPriceRange({ ...priceRange, max: val });
+                      handlePriceChange(priceRange.min, val);
                     }}
                     className="absolute w-full h-1.5 top-0 left-0 appearance-none bg-transparent pointer-events-none focus:outline-none"
                   />
