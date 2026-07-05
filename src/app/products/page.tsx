@@ -49,6 +49,7 @@ function ProductsContent() {
   // Đọc các bộ lọc từ URL
   const queryParam = searchParams.get('q') || '';
   const categoryParam = searchParams.get('category') || '';
+  const brandParam = searchParams.get('brand') || '';
 
   const [products, setProducts] = useState<any[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<any[]>([]);
@@ -93,6 +94,15 @@ function ProductsContent() {
   useEffect(() => {
     setSearchTerm(queryParam);
   }, [queryParam]);
+
+  // Đồng bộ hóa hãng được lọc từ URL khi URL thay đổi (VD: bấm link Mega Menu ở trang chủ)
+  useEffect(() => {
+    if (brandParam) {
+      setSelectedBrands(brandParam.split(','));
+    } else {
+      setSelectedBrands([]);
+    }
+  }, [brandParam]);
 
   // 3. Đóng các dropdown khi click outside
   useEffect(() => {
@@ -173,11 +183,20 @@ function ProductsContent() {
   };
 
   const handleBrandChange = (brand: string) => {
-    if (selectedBrands.includes(brand)) {
-      setSelectedBrands(selectedBrands.filter((b) => b !== brand));
+    const params = new URLSearchParams(searchParams.toString());
+    let newBrands = [...selectedBrands];
+    if (newBrands.includes(brand)) {
+      newBrands = newBrands.filter((b) => b !== brand);
     } else {
-      setSelectedBrands([...selectedBrands, brand]);
+      newBrands = [...newBrands, brand];
     }
+    
+    if (newBrands.length > 0) {
+      params.set('brand', newBrands.join(','));
+    } else {
+      params.delete('brand');
+    }
+    router.push(`/products?${params.toString()}`);
   };
 
   const handleCategoryChange = (cat: string) => {
