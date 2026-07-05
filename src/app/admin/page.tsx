@@ -159,6 +159,7 @@ export default function AdminPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [formProduct, setFormProduct] = useState<Product>(emptyForm);
+  const [discountEnabled, setDiscountEnabled] = useState(false);
   const [specRows, setSpecRows] = useState<SpecRow[]>([]);
   const [variantRows, setVariantRows] = useState<VariantRow[]>([]);
   const [colorRows, setColorRows] = useState<ColorRow[]>([]);
@@ -729,10 +730,10 @@ export default function AdminPage() {
       }
     }
 
-    const discountVal = Number(formProduct.discount) || 0;
+    const discountVal = discountEnabled ? (Number(formProduct.discount) || 0) : 0;
     const originalPriceVal = discountVal > 0
       ? Math.round(Number(formProduct.price) / (1 - discountVal / 100))
-      : (Number(formProduct.original_price) || Number(formProduct.price));
+      : Number(formProduct.price);
 
     const payload = {
       category: formProduct.category,
@@ -838,13 +839,15 @@ export default function AdminPage() {
     setNewRomVal('');
     setSelectedPolicyTagIds([]);
     setNewPolicyVal('');
+    setDiscountEnabled(false);
     setModalOpen(true);
   };
 
   // Mở modal sửa sản phẩm
   const openEditProduct = (p: Product) => {
     setEditingProduct(p);
-    setFormProduct(p);
+    setFormProduct({ ...p, discount: p.discount || 0, original_price: p.original_price || 0 });
+    setDiscountEnabled((p.discount || 0) > 0);
 
 
     // Khởi tạo các mảng tag và specs mới
@@ -2661,14 +2664,19 @@ export default function AdminPage() {
                             <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-muted-foreground">
                               <input
                                 type="checkbox"
-                                checked={(formProduct.discount || 0) > 0}
-                                onChange={(e) => setFormProduct({ ...formProduct, discount: e.target.checked ? 10 : 0 })}
+                                checked={discountEnabled}
+                                onChange={(e) => {
+                                  setDiscountEnabled(e.target.checked);
+                                  if (e.target.checked && (formProduct.discount || 0) === 0) {
+                                    setFormProduct(prev => ({ ...prev, discount: 10 }));
+                                  }
+                                }}
                                 className="w-3 h-3 rounded accent-amber-500 cursor-pointer"
                               />
                               Bật giảm giá
                             </label>
                           </div>
-                          {(formProduct.discount || 0) > 0 && (
+                          {discountEnabled && (
                             <div className="grid grid-cols-2 gap-2">
                               <div className="space-y-1">
                                 <label className="text-[10px] font-semibold text-muted-foreground">% Giảm (0–100)</label>
@@ -2685,7 +2693,7 @@ export default function AdminPage() {
                                 <input
                                   type="text"
                                   readOnly
-                                  value={(formProduct.discount || 0) > 0 && formProduct.price > 0
+                                  value={discountEnabled && (formProduct.discount || 0) > 0 && formProduct.price > 0
                                     ? Math.round(formProduct.price / (1 - (formProduct.discount || 0) / 100)).toLocaleString('vi-VN') + ' đ'
                                     : '—'}
                                   className="w-full h-9 px-2.5 rounded-lg border border-border bg-muted text-muted-foreground text-xs cursor-not-allowed"
@@ -2693,7 +2701,7 @@ export default function AdminPage() {
                               </div>
                             </div>
                           )}
-                          {(formProduct.discount || 0) > 0 && formProduct.price > 0 && (
+                          {discountEnabled && (formProduct.discount || 0) > 0 && formProduct.price > 0 && (
                             <p className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">
                               → Giá hiển thị: {formProduct.price.toLocaleString('vi-VN')}đ
                               &nbsp;← Gốc: {Math.round(formProduct.price / (1 - (formProduct.discount || 0) / 100)).toLocaleString('vi-VN')}đ
@@ -4515,14 +4523,19 @@ export default function AdminPage() {
                   <label className="flex items-center gap-2 cursor-pointer text-xs text-muted-foreground">
                     <input
                       type="checkbox"
-                      checked={(formProduct.discount || 0) > 0}
-                      onChange={(e) => setFormProduct({ ...formProduct, discount: e.target.checked ? 10 : 0 })}
+                      checked={discountEnabled}
+                      onChange={(e) => {
+                        setDiscountEnabled(e.target.checked);
+                        if (e.target.checked && (formProduct.discount || 0) === 0) {
+                          setFormProduct(prev => ({ ...prev, discount: 10 }));
+                        }
+                      }}
                       className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
                     />
                     Bật giảm giá
                   </label>
                 </div>
-                {(formProduct.discount || 0) > 0 && (
+                {discountEnabled && (
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <label className="text-xs font-semibold text-muted-foreground">% Giảm (0–100)</label>
@@ -4539,7 +4552,7 @@ export default function AdminPage() {
                       <input
                         type="text"
                         readOnly
-                        value={(formProduct.discount || 0) > 0 && formProduct.price > 0
+                        value={discountEnabled && (formProduct.discount || 0) > 0 && formProduct.price > 0
                           ? Math.round(formProduct.price / (1 - (formProduct.discount || 0) / 100)).toLocaleString('vi-VN') + ' đ'
                           : '—'}
                         className="w-full h-11 px-4 rounded-xl border border-border bg-muted text-muted-foreground text-sm cursor-not-allowed"
@@ -4547,7 +4560,7 @@ export default function AdminPage() {
                     </div>
                   </div>
                 )}
-                {(formProduct.discount || 0) > 0 && formProduct.price > 0 && (
+                {discountEnabled && (formProduct.discount || 0) > 0 && formProduct.price > 0 && (
                   <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold">
                     → Giá bán: <strong>{formProduct.price.toLocaleString('vi-VN')}đ</strong>
                     &nbsp;← Gốc: <span className="line-through text-muted-foreground">{Math.round(formProduct.price / (1 - (formProduct.discount || 0) / 100)).toLocaleString('vi-VN')}đ</span>
