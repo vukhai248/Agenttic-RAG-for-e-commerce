@@ -280,6 +280,22 @@ export default function AccountPage() {
             </Link>
           )}
 
+          <Link
+            href="/policy/warranty"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-foreground border border-border hover:bg-muted/50 rounded-xl transition-all cursor-pointer shadow-sm"
+          >
+            <ShieldCheck className="w-4 h-4 text-primary" />
+            <span>Chính sách bảo hành</span>
+          </Link>
+
+          <Link
+            href="/policy/terms"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-foreground border border-border hover:bg-muted/50 rounded-xl transition-all cursor-pointer shadow-sm"
+          >
+            <HelpCircle className="w-4 h-4 text-primary" />
+            <span>Điều khoản sử dụng</span>
+          </Link>
+
           <button
             onClick={handleLogout}
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-destructive border border-destructive/20 hover:border-destructive/40 bg-destructive/5 hover:bg-destructive/10 rounded-xl transition-all cursor-pointer"

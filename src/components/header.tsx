@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useCart } from '@/store/useCart';
 import { supabase } from '@/lib/supabase';
 import { ShoppingCart, User, Search, Laptop, Smartphone, Watch, Headphones, Layers, Sun, Moon } from 'lucide-react';
@@ -10,11 +10,17 @@ import { ShoppingCart, User, Search, Laptop, Smartphone, Watch, Headphones, Laye
 export default function Header() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const shouldHideCategories = pathname?.startsWith('/account') || pathname?.startsWith('/policy') || pathname?.startsWith('/admin');
   const [searchQuery, setSearchQuery] = useState(searchParams.get('q') || '');
   const [user, setUser] = useState<any>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [mounted, setMounted] = useState(false);
   const totalItems = useCart((state) => state.getTotalItems());
+  
   useEffect(() => {
+    setMounted(true);
+
     // Lấy thông tin user hiện tại từ Supabase Auth
     const getUser = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -100,19 +106,19 @@ export default function Header() {
           <button
             onClick={toggleTheme}
             className="p-2.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            title={theme === 'light' ? 'Chuyển sang Dark Mode' : 'Chuyển sang Light Mode'}
+            title={mounted && theme === 'light' ? 'Chuyển sang Dark Mode' : 'Chuyển sang Light Mode'}
           >
-            {theme === 'light' ? (
-              <Moon className="w-5 h-5" />
-            ) : (
+            {mounted && theme === 'dark' ? (
               <Sun className="w-5 h-5 text-primary" />
+            ) : (
+              <Moon className="w-5 h-5" />
             )}
           </button>
 
           {/* GIỎ HÀNG */}
           <Link href="/cart" className="relative p-2.5 text-muted-foreground hover:text-foreground transition-colors">
             <ShoppingCart className="w-6 h-6" />
-            {totalItems > 0 && (
+            {mounted && totalItems > 0 && (
               <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground shadow-md shadow-primary/35 animate-bounce">
                 {totalItems}
               </span>
@@ -153,33 +159,35 @@ export default function Header() {
       </div>
 
       {/* DANH MỤC SẢN PHẨM Ở DƯỚI */}
-      <div className="border-t border-border bg-card">
-        <div className="container mx-auto px-4 flex items-center justify-start overflow-x-auto gap-6 h-10 text-xs no-scrollbar">
-          <Link href="/products" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors py-1.5 whitespace-nowrap">
-            Tất cả sản phẩm
-          </Link>
-          <Link href="/products?category=laptop" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors py-1.5 whitespace-nowrap">
-            <Laptop className="w-3.5 h-3.5" />
-            Laptop
-          </Link>
-          <Link href="/products?category=phone" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors py-1.5 whitespace-nowrap">
-            <Smartphone className="w-3.5 h-3.5" />
-            Điện thoại
-          </Link>
-          <Link href="/products?category=smartwatch" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors py-1.5 whitespace-nowrap">
-            <Watch className="w-3.5 h-3.5" />
-            Đồng hồ
-          </Link>
-          <Link href="/products?category=earphone" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors py-1.5 whitespace-nowrap">
-            <Headphones className="w-3.5 h-3.5" />
-            Tai nghe
-          </Link>
-          <Link href="/products?category=accessory" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors py-1.5 whitespace-nowrap">
-            <Layers className="w-3.5 h-3.5" />
-            Phụ kiện
-          </Link>
+      {!shouldHideCategories && (
+        <div className="border-t border-border bg-card">
+          <div className="container mx-auto px-4 flex items-center justify-start overflow-x-auto gap-6 h-10 text-xs no-scrollbar">
+            <Link href="/products" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors py-1.5 whitespace-nowrap">
+              Tất cả sản phẩm
+            </Link>
+            <Link href="/products?category=laptop" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors py-1.5 whitespace-nowrap">
+              <Laptop className="w-3.5 h-3.5" />
+              Laptop
+            </Link>
+            <Link href="/products?category=phone" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors py-1.5 whitespace-nowrap">
+              <Smartphone className="w-3.5 h-3.5" />
+              Điện thoại
+            </Link>
+            <Link href="/products?category=smartwatch" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors py-1.5 whitespace-nowrap">
+              <Watch className="w-3.5 h-3.5" />
+              Đồng hồ
+            </Link>
+            <Link href="/products?category=earphone" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors py-1.5 whitespace-nowrap">
+              <Headphones className="w-3.5 h-3.5" />
+              Tai nghe
+            </Link>
+            <Link href="/products?category=accessory" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors py-1.5 whitespace-nowrap">
+              <Layers className="w-3.5 h-3.5" />
+              Phụ kiện
+            </Link>
+          </div>
         </div>
-      </div>
+      )}
     </header>
   );
 }

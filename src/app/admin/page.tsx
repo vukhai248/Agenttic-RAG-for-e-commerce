@@ -24,7 +24,9 @@ import {
   MapPin,
   RefreshCw,
   Info,
-  MessageSquare
+  MessageSquare,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -105,7 +107,35 @@ export default function AdminPage() {
   const [prodFilterCategory, setProdFilterCategory] = useState('');
   const [orderSearch, setOrderSearch] = useState('');
   const [ticketFilterStatus, setTicketFilterStatus] = useState('');
-  const [chartTab, setChartTab] = useState<'week' | 'month'>('month');
+  const [chartTab, setChartTab] = useState<'today' | 'week' | 'month'>('month');
+  const [selectedTimePoint, setSelectedTimePoint] = useState<string | null>(null);
+  const [selectedSubChartMonth, setSelectedSubChartMonth] = useState<string | null>(null);
+  const [chartAnchorDate, setChartAnchorDate] = useState<Date>(new Date());
+
+  const handleChartTabChange = (tab: 'today' | 'week' | 'month') => {
+    setChartTab(tab);
+    setChartAnchorDate(new Date());
+    setSelectedTimePoint(null);
+    setSelectedSubChartMonth(null);
+  };
+
+  const shiftChartDate = (direction: 'prev' | 'next') => {
+    const offset = direction === 'prev' ? -1 : 1;
+    setSelectedTimePoint(null);
+    setSelectedSubChartMonth(null);
+    
+    setChartAnchorDate(prev => {
+      const newDate = new Date(prev.getTime());
+      if (chartTab === 'today') {
+        newDate.setDate(prev.getDate() + offset);
+      } else if (chartTab === 'week') {
+        newDate.setDate(prev.getDate() + offset * 7);
+      } else if (chartTab === 'month') {
+        newDate.setFullYear(prev.getFullYear() + offset);
+      }
+      return newDate;
+    });
+  };
 
   // Product Modal State
   const [modalOpen, setModalOpen] = useState(false);
@@ -727,46 +757,218 @@ export default function AdminPage() {
     const lowStockProducts = products.filter(p => p.stock <= 5);
     const outOfStockCount = products.filter(p => p.stock === 0).length;
 
-    // 1. Thống kê theo tuần (Thứ 2 -> Chủ Nhật dựa trên getDay)
-    const weeklyData = [0, 0, 0, 0, 0, 0, 0];
-    successfulOrders.forEach(o => {
-      const day = new Date(o.created_at).getDay();
-      weeklyData[day] += Number(o.total);
-    });
-    const weeklyRevenue = [
-      { label: 'Thứ 2', value: weeklyData[1] },
-      { label: 'Thứ 3', value: weeklyData[2] },
-      { label: 'Thứ 4', value: weeklyData[3] },
-      { label: 'Thứ 5', value: weeklyData[4] },
-      { label: 'Thứ 6', value: weeklyData[5] },
-      { label: 'Thứ 7', value: weeklyData[6] },
-      { label: 'Chủ Nhật', value: weeklyData[0] },
-    ];
+    // 1. Thống kê 24 giờ của ngày chartAnchorDate
+    const hourlyData: Record<string, number> = {
+      '04:00': 0, '08:00': 0, '12:00': 0, '16:00': 0, '20:00': 0, '24:00': 0
+    };
+    const targetYMD = `${chartAnchorDate.getFullYear()}-${String(chartAnchorDate.getMonth() + 1).padStart(2, '0')}-${String(chartAnchorDate.getDate()).padStart(2, '0')}`;
 
-    // 2. Thống kê theo 6 tháng gần nhất
+    successfulOrders.forEach(o => {
+      const date = new Date(o.created_at);
+      const ymd = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      if (ymd === targetYMD) {
+        const hour = date.getHours();
+        if (hour < 4) hourlyData['04:00'] += Number(o.total);
+        else if (hour < 8) hourlyData['08:00'] += Number(o.total);
+        else if (hour < 12) hourlyData['12:00'] += Number(o.total);
+        else if (hour < 16) hourlyData['16:00'] += Number(o.total);
+        else if (hour < 20) hourlyData['20:00'] += Number(o.total);
+        else hourlyData['24:00'] += Number(o.total);
+      }
+    });
+
+    const hourlyRevenue = Object.keys(hourlyData).map(h => ({
+      label: h,
+      value: hourlyData[h]
+    }));
+
+    // 2. Thống kê 7 ngày kết thúc bằng chartAnchorDate
+    const dailyData: Record<string, number> = {};
+    const last7Days: { label: string; key: string }[] = [];
+    const dayNames = ['Chủ Nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+    
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(chartAnchorDate.getTime());
+      d.setDate(chartAnchorDate.getDate() - i);
+      const dayName = dayNames[d.getDay()];
+      const dayVal = String(d.getDate()).padStart(2, '0');
+      const monthVal = String(d.getMonth() + 1).padStart(2, '0');
+      
+      const label = `${dayName} (${dayVal}/${monthVal})`;
+      const key = `${d.getFullYear()}-${monthVal}-${dayVal}`;
+      last7Days.push({ label, key });
+      dailyData[key] = 0;
+    }
+
+    successfulOrders.forEach(o => {
+      const date = new Date(o.created_at);
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      if (dailyData[key] !== undefined) {
+        dailyData[key] += Number(o.total);
+      }
+    });
+
+    const weeklyRevenue = last7Days.map(d => ({
+      label: d.label,
+      value: dailyData[d.key]
+    }));
+
+    // 3. Thống kê theo 12 tháng của năm targetYear cố định
+    const targetYear = chartAnchorDate.getFullYear();
     const monthlyData: Record<string, number> = {};
-    const last6Months: { label: string; key: string }[] = [];
-    const now = new Date();
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const label = `Tháng ${d.getMonth() + 1}`;
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      last6Months.push({ label, key });
+    const monthsList: { label: string; key: string }[] = [];
+    for (let m = 1; m <= 12; m++) {
+      const label = `${String(m).padStart(2, '0')}/${targetYear}`;
+      const key = `${targetYear}-${String(m).padStart(2, '0')}`;
+      monthsList.push({ label, key });
       monthlyData[key] = 0;
     }
 
     successfulOrders.forEach(o => {
       const date = new Date(o.created_at);
-      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      if (monthlyData[key] !== undefined) {
-        monthlyData[key] += Number(o.total);
+      if (date.getFullYear() === targetYear) {
+        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        if (monthlyData[key] !== undefined) {
+          monthlyData[key] += Number(o.total);
+        }
       }
     });
 
-    const monthlyRevenue = last6Months.map(m => ({
+    const monthlyRevenue = monthsList.map(m => ({
       label: m.label,
       value: monthlyData[m.key]
     }));
+
+    // Tính toán dữ liệu biểu đồ con nếu có tháng được chọn
+    let subChartData: { label: string; revenue: number; qty: number; cancelled: number }[] = [];
+    if (selectedSubChartMonth) {
+      const [mStr, yStr] = selectedSubChartMonth.split('/');
+      const month = parseInt(mStr);
+      const year = parseInt(yStr);
+      const daysInMonth = new Date(year, month, 0).getDate(); // Lấy số ngày của tháng đó
+      
+      const dailySubData: Record<string, { label: string; revenue: number; qty: number; cancelled: number }> = {};
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dStr = String(d).padStart(2, '0');
+        const mStr = String(month).padStart(2, '0');
+        const key = `${dStr}/${mStr}`;
+        const ymdKey = `${year}-${mStr}-${dStr}`;
+        dailySubData[ymdKey] = {
+          label: key,
+          revenue: 0,
+          qty: 0,
+          cancelled: 0
+        };
+      }
+
+      // Doanh thu & sản phẩm bán được của đơn thành công
+      successfulOrders.forEach(o => {
+        const date = new Date(o.created_at);
+        if (date.getFullYear() === year && (date.getMonth() + 1) === month) {
+          const dStr = String(date.getDate()).padStart(2, '0');
+          const mStr = String(month).padStart(2, '0');
+          const ymdKey = `${year}-${mStr}-${dStr}`;
+          if (dailySubData[ymdKey]) {
+            dailySubData[ymdKey].revenue += Number(o.total);
+            o.items?.forEach((item: any) => {
+              dailySubData[ymdKey].qty += Number(item.quantity || 1);
+            });
+          }
+        }
+      });
+
+      // Số đơn bị hủy
+      cancelledOrders.forEach(o => {
+        const date = new Date(o.created_at);
+        if (date.getFullYear() === year && (date.getMonth() + 1) === month) {
+          const dStr = String(date.getDate()).padStart(2, '0');
+          const mStr = String(month).padStart(2, '0');
+          const ymdKey = `${year}-${mStr}-${dStr}`;
+          if (dailySubData[ymdKey]) {
+            dailySubData[ymdKey].cancelled += 1;
+          }
+        }
+      });
+
+      subChartData = Object.keys(dailySubData).sort().map(k => dailySubData[k]);
+    }
+
+    // Lọc đơn hàng theo thời điểm được click chọn trên biểu đồ (nếu có)
+    let filteredOrdersForCategory = successfulOrders;
+
+    if (selectedSubChartMonth) {
+      const [mStr, yStr] = selectedSubChartMonth.split('/');
+      const month = parseInt(mStr);
+      const year = parseInt(yStr);
+
+      if (selectedTimePoint) {
+        const day = parseInt(selectedTimePoint.split('/')[0]);
+        filteredOrdersForCategory = successfulOrders.filter(o => {
+          const date = new Date(o.created_at);
+          return date.getFullYear() === year && (date.getMonth() + 1) === month && date.getDate() === day;
+        });
+      } else {
+        filteredOrdersForCategory = successfulOrders.filter(o => {
+          const date = new Date(o.created_at);
+          return date.getFullYear() === year && (date.getMonth() + 1) === month;
+        });
+      }
+    } else if (selectedTimePoint) {
+      // Đang xem biểu đồ lớn
+      if (chartTab === 'month') {
+        const [mStr, yStr] = selectedTimePoint.split('/');
+        const month = parseInt(mStr);
+        const year = parseInt(yStr);
+        filteredOrdersForCategory = successfulOrders.filter(o => {
+          const date = new Date(o.created_at);
+          return date.getFullYear() === year && (date.getMonth() + 1) === month;
+        });
+      } else if (chartTab === 'week') {
+        const matchedDay = last7Days.find(d => d.label === selectedTimePoint);
+        if (matchedDay) {
+          filteredOrdersForCategory = successfulOrders.filter(o => {
+            const date = new Date(o.created_at);
+            const ymd = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+            return ymd === matchedDay.key;
+          });
+        }
+      } else if (chartTab === 'today') {
+        const targetHourMap: Record<string, number[]> = {
+          '04:00': [0, 1, 2, 3],
+          '08:00': [4, 5, 6, 7],
+          '12:00': [8, 9, 10, 11],
+          '16:00': [12, 13, 14, 15],
+          '20:00': [16, 17, 18, 19],
+          '24:00': [20, 21, 22, 23]
+        };
+        const hours = targetHourMap[selectedTimePoint] || [];
+        filteredOrdersForCategory = successfulOrders.filter(o => {
+          const date = new Date(o.created_at);
+          const ymd = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+          return ymd === targetYMD && hours.includes(date.getHours());
+        });
+      }
+    } else {
+      // Khi không có điểm click cụ thể, mặc định lọc theo chu kỳ lớn của biểu đồ đó
+      if (chartTab === 'month') {
+        filteredOrdersForCategory = successfulOrders.filter(o => {
+          return new Date(o.created_at).getFullYear() === targetYear;
+        });
+      } else if (chartTab === 'week') {
+        const validKeys = last7Days.map(d => d.key);
+        filteredOrdersForCategory = successfulOrders.filter(o => {
+          const date = new Date(o.created_at);
+          const ymd = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+          return validKeys.includes(ymd);
+        });
+      } else if (chartTab === 'today') {
+        filteredOrdersForCategory = successfulOrders.filter(o => {
+          const date = new Date(o.created_at);
+          const ymd = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+          return ymd === targetYMD;
+        });
+      }
+    }
 
     // 3. Phân bổ doanh số theo danh mục sản phẩm (Tỷ lệ bán được)
     const categorySales: Record<string, { qty: number; revenue: number }> = {
@@ -778,7 +980,9 @@ export default function AdminPage() {
     };
 
     let totalQtySold = 0;
-    successfulOrders.forEach(o => {
+    const productSalesMap: Record<string, { name: string; image: string; qty: number; revenue: number }> = {};
+
+    filteredOrdersForCategory.forEach(o => {
       o.items?.forEach((item: any) => {
         const matchedProduct = products.find(p => 
           p.id === item.id || 
@@ -793,8 +997,31 @@ export default function AdminPage() {
           categorySales[cat].qty += qty;
           categorySales[cat].revenue += Number(item.price || 0) * qty;
           totalQtySold += qty;
+
+          // Thống kê chi tiết từng sản phẩm
+          const prodKey = item.id || item.name;
+          if (!productSalesMap[prodKey]) {
+            productSalesMap[prodKey] = {
+              name: item.name,
+              image: item.image || '',
+              qty: 0,
+              revenue: 0
+            };
+          }
+          productSalesMap[prodKey].qty += qty;
+          productSalesMap[prodKey].revenue += Number(item.price || 0) * qty;
         }
       });
+    });
+
+    // Tìm top 1 sản phẩm bán chạy nhất trong tập lọc
+    let topProduct: any = null;
+    let maxProdQty = 0;
+    Object.values(productSalesMap).forEach((pInfo: any) => {
+      if (pInfo.qty > maxProdQty) {
+        maxProdQty = pInfo.qty;
+        topProduct = pInfo;
+      }
     });
 
     // Mảng màu sắc cho từng danh mục
@@ -831,8 +1058,11 @@ export default function AdminPage() {
       outOfStockCount,
       weeklyRevenue,
       monthlyRevenue,
+      hourlyRevenue,
       categoryRates,
-      totalQtySold
+      totalQtySold,
+      topProduct,
+      subChartData
     };
   };
 
@@ -1052,35 +1282,369 @@ export default function AdminPage() {
               
               {/* Cột trái: Biểu đồ doanh thu tuần/tháng */}
               <div className="lg:col-span-2 rounded-2xl border border-border bg-card/40 p-5 space-y-4 shadow-sm">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-border/60 pb-3">
-                  <div>
-                    <h3 className="text-sm font-bold text-foreground">Phân tích doanh thu</h3>
-                    <p className="text-[10px] text-muted-foreground">Nhấp để chuyển đổi chu kỳ thống kê</p>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-border/60 pb-3">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-bold text-foreground">
+                      {selectedSubChartMonth 
+                        ? `Chi tiết doanh thu tháng ${selectedSubChartMonth}` 
+                        : 'Phân tích doanh thu'
+                      }
+                    </h3>
+                    
+                    {/* Hàng điều phối thời gian với nút < và > */}
+                    {!selectedSubChartMonth && (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => shiftChartDate('prev')}
+                          title="Chu kỳ trước"
+                          className="p-1 rounded border border-border bg-background hover:bg-muted text-foreground cursor-pointer transition-colors shadow-sm"
+                        >
+                          <ChevronLeft className="w-3 h-3" />
+                        </button>
+                        
+                        <span className="text-[10px] font-black text-foreground select-none">
+                          {(() => {
+                            if (chartTab === 'today') {
+                              return `Ngày ${String(chartAnchorDate.getDate()).padStart(2, '0')}/${String(chartAnchorDate.getMonth() + 1).padStart(2, '0')}/${chartAnchorDate.getFullYear()}`;
+                            } else if (chartTab === 'week') {
+                              // Tính ngày đầu và cuối tuần
+                              const start = new Date(chartAnchorDate.getTime() - 6 * 24 * 60 * 60 * 1000);
+                              const startStr = `${String(start.getDate()).padStart(2, '0')}/${String(start.getMonth() + 1).padStart(2, '0')}`;
+                              const endStr = `${String(chartAnchorDate.getDate()).padStart(2, '0')}/${String(chartAnchorDate.getMonth() + 1).padStart(2, '0')}`;
+                              return `Tuần: ${startStr} - ${endStr}`;
+                            } else {
+                              return `Năm ${chartAnchorDate.getFullYear()}`;
+                            }
+                          })()}
+                        </span>
+
+                        <button
+                          onClick={() => shiftChartDate('next')}
+                          title="Chu kỳ sau"
+                          className="p-1 rounded border border-border bg-background hover:bg-muted text-foreground cursor-pointer transition-colors shadow-sm"
+                        >
+                          <ChevronRight className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  <div className="flex rounded-lg border border-border bg-background p-0.5 text-xs">
+                  
+                  {selectedSubChartMonth ? (
                     <button
-                      onClick={() => setChartTab('month')}
-                      className={`px-3 py-1 rounded-md font-semibold transition-all cursor-pointer ${
-                        chartTab === 'month' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                      }`}
+                      onClick={() => {
+                        setSelectedSubChartMonth(null);
+                        setSelectedTimePoint(null);
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1 text-[10px] rounded-lg border border-border bg-background hover:bg-muted font-bold text-foreground cursor-pointer transition-colors shadow-sm"
                     >
-                      Theo Tháng (6 tháng)
+                      ← Quay lại 12 tháng
                     </button>
-                    <button
-                      onClick={() => setChartTab('week')}
-                      className={`px-3 py-1 rounded-md font-semibold transition-all cursor-pointer ${
-                        chartTab === 'week' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      Theo Tuần (Thứ)
-                    </button>
-                  </div>
+                  ) : (
+                    <div className="flex rounded-lg border border-border bg-background p-0.5 text-xs">
+                      <button
+                        onClick={() => handleChartTabChange('today')}
+                        className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                          chartTab === 'today' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        1 ngày (Hôm nay)
+                      </button>
+                      <button
+                        onClick={() => handleChartTabChange('week')}
+                        className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                          chartTab === 'week' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        7 ngày trước
+                      </button>
+                      <button
+                        onClick={() => handleChartTabChange('month')}
+                        className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                          chartTab === 'month' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        1 năm trước (12 tháng)
+                      </button>
+                    </div>
+                  )}
                 </div>
                 
                 {/* Vẽ Biểu đồ Đường SVG chuyên nghiệp với lưới phân tích (Grid Lines) */}
                 {(() => {
-                  const activeData = chartTab === 'month' ? stats.monthlyRevenue : stats.weeklyRevenue;
-                  const maxVal = Math.max(...activeData.map(d => d.value), 1000000);
+                  if (selectedSubChartMonth) {
+                    const activeData = stats.subChartData || [];
+                    const maxRevenue = Math.max(...activeData.map((d: any) => d.revenue), 1000000);
+                    const maxQty = Math.max(...activeData.map((d: any) => d.qty), 1);
+                    const maxCancelled = Math.max(...activeData.map((d: any) => d.cancelled), 1);
+                    const maxRightAxis = Math.max(maxQty, maxCancelled, 5); // Trục Y phụ bên phải
+                    
+                    const svgWidth = 600;
+                    const svgHeight = 220;
+                    const paddingLeft = 70;
+                    const paddingRight = 45;
+                    const paddingTop = 25;
+                    const paddingBottom = 30;
+                    
+                    const chartWidth = svgWidth - paddingLeft - paddingRight;
+                    const chartHeight = svgHeight - paddingTop - paddingBottom;
+                    
+                    // Điểm tọa độ Doanh thu
+                    const pointsRevenue = activeData.map((item: any, idx: number) => {
+                      const x = paddingLeft + (idx * (chartWidth / (activeData.length - 1)));
+                      const y = svgHeight - paddingBottom - (item.revenue / maxRevenue) * chartHeight;
+                      return { x, y, label: item.label, value: item.revenue, qty: item.qty, cancelled: item.cancelled };
+                    });
+                    
+                    // Điểm tọa độ Số lượng bán được (qty)
+                    const pointsQty = activeData.map((item: any, idx: number) => {
+                      const x = paddingLeft + (idx * (chartWidth / (activeData.length - 1)));
+                      const y = svgHeight - paddingBottom - (item.qty / maxRightAxis) * chartHeight;
+                      return { x, y };
+                    });
+                    
+                    // Điểm tọa độ Đơn bị hủy (cancelled)
+                    const pointsCancelled = activeData.map((item: any, idx: number) => {
+                      const x = paddingLeft + (idx * (chartWidth / (activeData.length - 1)));
+                      const y = svgHeight - paddingBottom - (item.cancelled / maxRightAxis) * chartHeight;
+                      return { x, y };
+                    });
+                    
+                    const lineRevenuePath = pointsRevenue.reduce((acc: string, p: any, idx: number) => {
+                      return idx === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`;
+                    }, '');
+                    
+                    const areaRevenuePath = pointsRevenue.length > 0 
+                      ? `${lineRevenuePath} L ${pointsRevenue[pointsRevenue.length - 1].x} ${svgHeight - paddingBottom} L ${pointsRevenue[0].x} ${svgHeight - paddingBottom} Z`
+                      : '';
+                      
+                    const lineQtyPath = pointsQty.reduce((acc: string, p: any, idx: number) => {
+                      return idx === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`;
+                    }, '');
+
+                    const lineCancelledPath = pointsCancelled.reduce((acc: string, p: any, idx: number) => {
+                      return idx === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`;
+                    }, '');
+
+                    const gridTicks = [0, 0.25, 0.5, 0.75, 1];
+                    
+                    return (
+                      <div className="relative w-full overflow-hidden bg-background/25 rounded-2xl p-2 space-y-2">
+                        {/* Legend chú thích màu sắc ở góc */}
+                        <div className="flex justify-end gap-4 text-[9px] font-extrabold text-muted-foreground px-2">
+                          <div className="flex items-center gap-1">
+                            <span className="w-2.5 h-2.5 rounded-full bg-primary inline-block" />
+                            <span>Doanh thu (L)</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" />
+                            <span>Đã bán (R)</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block" />
+                            <span>Hủy đơn (R)</span>
+                          </div>
+                        </div>
+
+                        <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-auto overflow-visible">
+                          <defs>
+                            <linearGradient id="subChartAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.15" />
+                              <stop offset="100%" stopColor="var(--primary)" stopOpacity="0.0" />
+                            </linearGradient>
+                          </defs>
+                          
+                          {/* Lưới ngang & Nhãn trục Y */}
+                          {gridTicks.map((tick: number, i: number) => {
+                            const y = svgHeight - paddingBottom - tick * chartHeight;
+                            const leftVal = Math.round(tick * maxRevenue);
+                            const rightVal = Math.round(tick * maxRightAxis);
+                            return (
+                              <g key={i} className="opacity-40">
+                                <line 
+                                  x1={paddingLeft} 
+                                  y1={y} 
+                                  x2={svgWidth - paddingRight} 
+                                  y2={y} 
+                                  stroke="currentColor" 
+                                  strokeWidth="1" 
+                                  strokeDasharray="3 3" 
+                                  className="text-border/80"
+                                />
+                                {/* Trục Y trái: Doanh thu */}
+                                <text 
+                                  x={paddingLeft - 10} 
+                                  y={y + 3.5} 
+                                  textAnchor="end" 
+                                  className="fill-muted-foreground text-[8px] font-bold"
+                                >
+                                  {tick === 0 ? '0' : formatPrice(leftVal)}
+                                </text>
+                                {/* Trục Y phải: Số lượng */}
+                                <text 
+                                  x={svgWidth - paddingRight + 10} 
+                                  y={y + 3.5} 
+                                  textAnchor="start" 
+                                  className="fill-muted-foreground text-[8px] font-bold"
+                                >
+                                  {rightVal}
+                                </text>
+                              </g>
+                            );
+                          })}
+                          
+                          {/* Đổ vùng màu gradient doanh thu */}
+                          {areaRevenuePath && (
+                            <path d={areaRevenuePath} fill="url(#subChartAreaGrad)" />
+                          )}
+                          
+                          {/* Đường Line Doanh thu */}
+                          {lineRevenuePath && (
+                            <path 
+                              d={lineRevenuePath} 
+                              fill="none" 
+                              stroke="var(--primary)" 
+                              strokeWidth="2.5" 
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          )}
+
+                          {/* Đường Line Số lượng đã bán */}
+                          {lineQtyPath && (
+                            <path 
+                              d={lineQtyPath} 
+                              fill="none" 
+                              stroke="#f59e0b" 
+                              strokeWidth="1.5" 
+                              strokeDasharray="4 2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          )}
+
+                          {/* Đường Line Đơn bị hủy */}
+                          {lineCancelledPath && (
+                            <path 
+                              d={lineCancelledPath} 
+                              fill="none" 
+                              stroke="#f53f3f" 
+                              strokeWidth="1.5" 
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          )}
+                          
+                          {/* Điểm tương tác của từng ngày */}
+                          {pointsRevenue.map((p: any, idx: number) => {
+                            const isTodayFiltered = selectedTimePoint === p.label;
+                            const showLabel = idx === 0 || idx === 4 || idx === 9 || idx === 14 || idx === 19 || idx === 24 || idx === activeData.length - 1;
+                            
+                            return (
+                              <g key={idx} className="group/subpoint">
+                                {showLabel && (
+                                  <text 
+                                    x={p.x} 
+                                    y={svgHeight - 6} 
+                                    textAnchor="middle" 
+                                    onClick={() => setSelectedTimePoint(selectedTimePoint === p.label ? null : p.label)}
+                                    className={`cursor-pointer text-[8px] font-extrabold transition-all duration-150 ${
+                                      isTodayFiltered 
+                                        ? 'fill-primary font-black scale-110' 
+                                        : 'fill-muted-foreground hover:fill-foreground'
+                                    }`}
+                                  >
+                                    {p.label}
+                                  </text>
+                                )}
+                                
+                                {/* Điểm chấm Doanh thu */}
+                                <circle 
+                                  cx={p.x} 
+                                  cy={p.y} 
+                                  r={isTodayFiltered ? "5" : "3"} 
+                                  onClick={() => setSelectedTimePoint(selectedTimePoint === p.label ? null : p.label)}
+                                  className={`cursor-pointer transition-all duration-150 ${
+                                    isTodayFiltered 
+                                      ? 'fill-primary stroke-background stroke-[2px]' 
+                                      : 'fill-background stroke-primary stroke-[1.5px] group-hover/subpoint:r-5'
+                                  }`}
+                                />
+
+                                {/* Điểm chấm Số lượng bán */}
+                                <circle 
+                                  cx={p.x} 
+                                  cy={pointsQty[idx].y} 
+                                  r="2" 
+                                  className="fill-background stroke-amber-500 stroke-[1px] opacity-60 group-hover/subpoint:opacity-100 pointer-events-none"
+                                />
+                                
+                                {/* Vùng nhạy cảm click & hover */}
+                                <circle 
+                                  cx={p.x} 
+                                  cy={p.y} 
+                                  r="16" 
+                                  onClick={() => setSelectedTimePoint(selectedTimePoint === p.label ? null : p.label)}
+                                  className="fill-transparent cursor-pointer"
+                                />
+                                
+                                {/* Tooltip chi tiết của ngày */}
+                                <g className="opacity-0 group-hover/subpoint:opacity-100 pointer-events-none transition-opacity duration-150">
+                                  <rect 
+                                    x={p.x - 60} 
+                                    y={Math.min(p.y, pointsQty[idx].y, pointsCancelled[idx].y) - 60} 
+                                    width={120} 
+                                    height={52} 
+                                    rx={6} 
+                                    className="fill-foreground dark:fill-background stroke-border stroke shadow-xl"
+                                  />
+                                  <text 
+                                    x={p.x} 
+                                    y={Math.min(p.y, pointsQty[idx].y, pointsCancelled[idx].y) - 48} 
+                                    textAnchor="middle" 
+                                    className="fill-background dark:fill-foreground text-[8px] font-black"
+                                  >
+                                    Ngày {p.label}
+                                  </text>
+                                  <text 
+                                    x={p.x - 52} 
+                                    y={Math.min(p.y, pointsQty[idx].y, pointsCancelled[idx].y) - 37} 
+                                    textAnchor="start" 
+                                    className="fill-background dark:fill-foreground text-[8px]"
+                                  >
+                                    💰 Doanh thu: {formatPrice(p.value)}
+                                  </text>
+                                  <text 
+                                    x={p.x - 52} 
+                                    y={Math.min(p.y, pointsQty[idx].y, pointsCancelled[idx].y) - 27} 
+                                    textAnchor="start" 
+                                    className="fill-background dark:fill-foreground text-[8px]"
+                                  >
+                                    🛍️ Đã bán: {p.qty} chiếc
+                                  </text>
+                                  <text 
+                                    x={p.x - 52} 
+                                    y={Math.min(p.y, pointsQty[idx].y, pointsCancelled[idx].y) - 17} 
+                                    textAnchor="start" 
+                                    className="fill-rose-400 dark:fill-rose-500 text-[8px] font-semibold"
+                                  >
+                                    ❌ Đơn hủy: {p.cancelled} đơn
+                                  </text>
+                                </g>
+                              </g>
+                            );
+                          })}
+                        </svg>
+                      </div>
+                    );
+                  }
+
+                  const activeData = 
+                    chartTab === 'month' 
+                      ? stats.monthlyRevenue 
+                      : chartTab === 'week' 
+                        ? stats.weeklyRevenue 
+                        : stats.hourlyRevenue || [];
+                  const maxVal = Math.max(...activeData.map((d: any) => d.value), 1000000);
                   
                   // Thiết lập thông số tọa độ biểu đồ
                   const svgWidth = 600;
@@ -1093,14 +1657,14 @@ export default function AdminPage() {
                   const chartWidth = svgWidth - paddingLeft - paddingRight;
                   const chartHeight = svgHeight - paddingTop - paddingBottom;
                   
-                  const points = activeData.map((item, idx) => {
+                  const points = activeData.map((item: any, idx: number) => {
                     const x = paddingLeft + (idx * (chartWidth / (activeData.length - 1)));
                     const y = svgHeight - paddingBottom - (item.value / maxVal) * chartHeight;
                     return { x, y, label: item.label, value: item.value };
                   });
                   
                   // Tạo chuỗi đường dẫn d cho thẻ path (đường line)
-                  const linePath = points.reduce((acc, p, idx) => {
+                  const linePath = points.reduce((acc: string, p: any, idx: number) => {
                     return idx === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`;
                   }, '');
                   
@@ -1124,7 +1688,7 @@ export default function AdminPage() {
                         </defs>
                         
                         {/* 1. Vẽ các đường lưới ngang (Grid Lines) & Nhãn trục Y */}
-                        {gridTicks.map((tick, i) => {
+                        {gridTicks.map((tick: number, i: number) => {
                           const y = svgHeight - paddingBottom - tick * chartHeight;
                           const val = Math.round(tick * maxVal);
                           return (
@@ -1172,14 +1736,26 @@ export default function AdminPage() {
                         )}
                         
                         {/* 4. Vẽ các chấm tròn toạ độ tương tác + Nhãn trục X */}
-                        {points.map((p, idx) => (
+                        {points.map((p: any, idx: number) => (
                           <g key={idx} className="group/point">
                             {/* Nhãn trục X bên dưới biểu đồ */}
                             <text 
                               x={p.x} 
                               y={svgHeight - 6} 
                               textAnchor="middle" 
-                              className="fill-muted-foreground text-[10px] font-extrabold"
+                              onClick={() => {
+                                if (chartTab === 'month') {
+                                  setSelectedSubChartMonth(p.label);
+                                  setSelectedTimePoint(null);
+                                } else {
+                                  setSelectedTimePoint(selectedTimePoint === p.label ? null : p.label);
+                                }
+                              }}
+                              className={`cursor-pointer text-[10px] font-extrabold transition-all duration-150 ${
+                                selectedTimePoint === p.label 
+                                  ? 'fill-primary scale-110 font-black' 
+                                  : 'fill-muted-foreground hover:fill-foreground'
+                              }`}
                             >
                               {p.label}
                             </text>
@@ -1188,15 +1764,35 @@ export default function AdminPage() {
                             <circle 
                               cx={p.x} 
                               cy={p.y} 
-                              r="4.5" 
-                              className="fill-background stroke-primary stroke-[2.5px] group-hover/point:r-6 group-hover/point:stroke-[3.5px] cursor-pointer transition-all duration-150"
+                              r={selectedTimePoint === p.label ? "6.5" : "4.5"} 
+                              onClick={() => {
+                                if (chartTab === 'month') {
+                                  setSelectedSubChartMonth(p.label);
+                                  setSelectedTimePoint(null);
+                                } else {
+                                  setSelectedTimePoint(selectedTimePoint === p.label ? null : p.label);
+                                }
+                              }}
+                              className={`cursor-pointer transition-all duration-150 ${
+                                selectedTimePoint === p.label 
+                                  ? 'fill-primary stroke-background stroke-[3px]' 
+                                  : 'fill-background stroke-primary stroke-[2.5px] group-hover/point:r-6 group-hover/point:stroke-[3.5px]'
+                              }`}
                             />
                             
                             {/* Tooltip vùng nhạy cảm lớn hơn để dễ hover */}
                             <circle 
                               cx={p.x} 
                               cy={p.y} 
-                              r="12" 
+                              r="16" 
+                              onClick={() => {
+                                if (chartTab === 'month') {
+                                  setSelectedSubChartMonth(p.label);
+                                  setSelectedTimePoint(null);
+                                } else {
+                                  setSelectedTimePoint(selectedTimePoint === p.label ? null : p.label);
+                                }
+                              }}
                               className="fill-transparent cursor-pointer"
                             />
                             
@@ -1235,9 +1831,29 @@ export default function AdminPage() {
               {/* Cột phải: Tỷ lệ bán được theo danh mục (Sales rates) */}
               <div className="rounded-2xl border border-border bg-card/40 p-5 space-y-4 shadow-sm flex flex-col justify-between">
                 <div className="space-y-3.5">
-                  <div className="border-b border-border pb-2.5">
-                    <h3 className="text-sm font-bold text-foreground">Tỷ lệ bán được theo loại</h3>
-                    <p className="text-[10px] text-muted-foreground">Phần trăm số lượng đã bán ra theo danh mục</p>
+                  <div className="border-b border-border pb-2.5 flex justify-between items-center">
+                    <div>
+                      <h3 className="text-sm font-bold text-foreground">Tỷ lệ bán được theo loại</h3>
+                      <p className="text-[10px] text-muted-foreground">
+                        {selectedTimePoint 
+                          ? `Lọc ngày: ${selectedTimePoint}` 
+                          : selectedSubChartMonth 
+                            ? `Lọc tháng: ${selectedSubChartMonth}` 
+                            : 'Thống kê tổng hợp toàn thời gian'
+                        }
+                      </p>
+                    </div>
+                    {(selectedTimePoint || selectedSubChartMonth) && (
+                      <button 
+                        onClick={() => {
+                          setSelectedTimePoint(null);
+                          setSelectedSubChartMonth(null);
+                        }}
+                        className="text-[9px] px-2 py-0.5 rounded bg-muted hover:bg-muted/80 text-foreground font-extrabold cursor-pointer transition-colors border border-border"
+                      >
+                        Đặt lại
+                      </button>
+                    )}
                   </div>
 
                   <div className="space-y-4 pr-1">
@@ -1261,10 +1877,41 @@ export default function AdminPage() {
                       </div>
                     ))}
                   </div>
+
+                  {/* Top sản phẩm bán chạy trong khoảng thời gian được lọc */}
+                  {stats.topProduct && (
+                    <div className="pt-3.5 border-t border-border/50 space-y-2 mt-2">
+                      <h4 className="text-[10px] font-extrabold text-primary uppercase tracking-wider">
+                        🔥 Bán chạy nhất {selectedTimePoint ? `(${selectedTimePoint})` : selectedSubChartMonth ? `(${selectedSubChartMonth})` : ''}
+                      </h4>
+                      <div className="flex gap-2.5 bg-muted/20 p-2.5 rounded-xl border border-border/40">
+                        {stats.topProduct.image && (
+                          <div className="w-10 h-10 rounded-lg bg-background border border-border p-0.5 flex-shrink-0 flex items-center justify-center">
+                            <img src={stats.topProduct.image} alt={stats.topProduct.name} className="w-full h-full object-contain" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0 space-y-0.5">
+                          <p className="text-xs font-extrabold text-foreground truncate" title={stats.topProduct.name}>
+                            {stats.topProduct.name}
+                          </p>
+                          <div className="flex justify-between text-[9px] text-muted-foreground">
+                            <span>Đã bán: <strong className="text-foreground font-bold">{stats.topProduct.qty} chiếc</strong></span>
+                            <span>Doanh thu: <strong className="text-foreground font-bold">{formatPrice(stats.topProduct.revenue)}</strong></span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                <div className="bg-muted/40 p-3 rounded-xl border border-border text-[10px] text-muted-foreground mt-4 leading-relaxed">
-                  Thiết bị **Điện thoại** và **Laptop** đang là các mặt hàng dẫn đầu về số lượng bán ra và tổng giá trị đơn hàng trong hệ thống.
+                <div className="bg-muted/40 p-2.5 rounded-xl border border-border text-[9px] text-muted-foreground mt-4 leading-relaxed">
+                  {selectedTimePoint ? (
+                    <span>Doanh số được lọc theo ngày cụ thể <strong>{selectedTimePoint}</strong>. Nhấp Đặt lại để xem toàn bộ dữ liệu.</span>
+                  ) : selectedSubChartMonth ? (
+                    <span>Doanh số được lọc theo tháng <strong>{selectedSubChartMonth}</strong>. Nhấp vào các ngày trên biểu đồ con hoặc Đặt lại để xem toàn bộ.</span>
+                  ) : (
+                    <span>Thiết bị **Điện thoại** và **Laptop** đang là các mặt hàng dẫn đầu về số lượng bán ra và tổng giá trị đơn hàng trong hệ thống.</span>
+                  )}
                 </div>
               </div>
 
