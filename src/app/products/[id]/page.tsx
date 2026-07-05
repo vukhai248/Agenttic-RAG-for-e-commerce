@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useCart } from '@/store/useCart';
-import { Star, ShoppingCart, ShieldCheck, Truck, RefreshCw, ChevronLeft, Cpu, HardDrive, Layers, Gift, CreditCard } from 'lucide-react';
+import { Star, ShoppingCart, ShieldCheck, Truck, RefreshCw, ChevronLeft, Cpu, HardDrive, Layers, Gift, CreditCard, Headphones, Award } from 'lucide-react';
 import Link from 'next/link';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -447,6 +447,12 @@ export default function ProductDetailPage() {
               }
               if (lower.includes('tặng') || lower.includes('quà') || lower.includes('ưu đãi') || lower.includes('khuyến mại') || lower.includes('giảm') || lower.includes('gift') || lower.includes('voucher')) {
                 return <Gift className="w-5 h-5 text-rose-500" />;
+              }
+              if (lower.includes('hỗ trợ') || lower.includes('kỹ thuật') || lower.includes('24/7') || lower.includes('tư vấn') || lower.includes('alo') || lower.includes('hotline') || lower.includes('support')) {
+                return <Headphones className="w-5 h-5 text-sky-500" />;
+              }
+              if (lower.includes('giá') || lower.includes('rẻ') || lower.includes('tốt nhất') || lower.includes('best') || lower.includes('award') || lower.includes('bao giá')) {
+                return <Award className="w-5 h-5 text-amber-500" />;
               }
               return <Star className="w-5 h-5 text-amber-500" />;
             };
