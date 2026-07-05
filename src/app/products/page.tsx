@@ -1,16 +1,15 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useCart } from '@/store/useCart';
-import { Search, SlidersHorizontal, Star, ShoppingCart, ArrowUpDown, X } from 'lucide-react';
+import { Search, SlidersHorizontal, Star, ShoppingCart, ArrowUpDown, X, ChevronDown, Check, Filter } from 'lucide-react';
 
-// Danh sách tất cả sản phẩm fallback để chạy offline/mock khi chưa có DB
 const FALLBACK_ALL_PRODUCTS = [
   // Laptops
-  { id: 'prod-1', category: 'laptop', brand: 'Apple', name: 'MacBook Air M3 13 inch', price: 27990000, stock: 15, description: 'MacBook Air M3 phiên bản 2024 siêu mỏng nhẹ, hiệu năng cực đỉnh nhờ chip Apple M3 thế hệ mới. Pin 18 tiếng.', specs: { cpu: 'Apple M3 8-Core', ram: '8GB', storage: '256GB' }, images: ['https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=600'], rating_avg: 4.8 },
+  { id: 'prod-1', category: 'laptop', brand: 'Apple', name: 'MacBook Air M3 13 inch', price: 27990000, stock: 15, description: 'MacBook Air M3 phiên bản 2024 siêu mỏng nhẹ, hiệu năng cực đỉnh nhờ chip Apple M3 thế mới. Pin 18 tiếng.', specs: { cpu: 'Apple M3 8-Core', ram: '8GB', storage: '256GB' }, images: ['https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=600'], rating_avg: 4.8 },
   { id: 'prod-2', category: 'laptop', brand: 'Apple', name: 'MacBook Pro M3 Pro 14 inch', price: 54990000, stock: 8, description: 'MacBook Pro 14 inch trang bị chip M3 Pro mạnh mẽ dành cho lập trình viên, designer chuyên nghiệp.', specs: { cpu: 'Apple M3 Pro 11-Core', ram: '18GB', storage: '512GB' }, images: ['https://images.unsplash.com/photo-1611186871348-b1ce696e52c9?w=600'], rating_avg: 4.9 },
   { id: 'prod-3', category: 'laptop', brand: 'Dell', name: 'Dell XPS 13 Plus 9320', price: 42500000, stock: 5, description: 'Dell XPS 13 Plus sở hữu thiết kế đột phá với thanh Touch Bar ẩn và bàn phím vô cực siêu mỏng nhẹ.', specs: { cpu: 'Intel Core i7-1360P', ram: '16GB', storage: '512GB' }, images: ['https://images.unsplash.com/photo-1593642632823-8f785ba67e45?w=600'], rating_avg: 4.5 },
   { id: 'prod-4', category: 'laptop', brand: 'Asus', name: 'Asus ROG Zephyrus G14 OLED', price: 45990000, stock: 6, description: 'Laptop gaming mỏng nhẹ màn hình OLED ROG Nebula 120Hz, GPU NVIDIA RTX 4060 chiến game AAA cực mượt.', specs: { cpu: 'AMD Ryzen 7 8845HS', ram: '16GB', storage: '1TB' }, images: ['https://images.unsplash.com/photo-1603302576837-37561b2e2302?w=600'], rating_avg: 4.7 },
@@ -33,6 +32,8 @@ const FALLBACK_ALL_PRODUCTS = [
   { id: 'prod-17', category: 'accessory', brand: 'Logitech', name: 'Chuột Logitech MX Master 3S', price: 2490000, stock: 20, description: 'Chuột không dây công thái học, cuộn từ tính MagSpeed và cảm biến di chuyển trên mọi bề mặt.', specs: { type: 'Chuột không dây', color: 'Đen' }, images: ['https://images.unsplash.com/photo-1615663245857-ac93bb7c39e7?w=600'], rating_avg: 4.9 }
 ];
 
+const MAX_PRICE_LIMIT = 60000000;
+
 function ProductsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -45,15 +46,21 @@ function ProductsContent() {
   const [filteredProducts, setFilteredProducts] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // States bộ lọc ở UI
+  // States bộ lọc ở UI chính thức
   const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
-  const [selectedPriceRange, setSelectedPriceRange] = useState<string>('all');
+  const [priceRange, setPriceRange] = useState<{ min: number; max: number }>({ min: 0, max: MAX_PRICE_LIMIT });
   const [sortBy, setSortBy] = useState<string>('featured');
   const [searchTerm, setSearchTerm] = useState(queryParam);
 
+  // States quản lý dropdown & trạng thái tạm thời
+  const [activeDropdown, setActiveDropdown] = useState<'brand' | 'price' | 'sort' | null>(null);
+  const [tempSelectedBrands, setTempSelectedBrands] = useState<string[]>([]);
+  const [tempPriceRange, setTempPriceRange] = useState<{ min: number; max: number }>({ min: 0, max: MAX_PRICE_LIMIT });
+
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const addItem = useCart((state) => state.addItem);
 
-  // 1. Tải danh sách sản phẩm từ Supabase hoặc dùng fallback
+  // 1. Tải danh sách sản phẩm
   useEffect(() => {
     const fetchProducts = async () => {
       setIsLoading(true);
@@ -63,10 +70,7 @@ function ProductsContent() {
         return;
       }
       try {
-        const { data, error } = await supabase
-          .from('products')
-          .select('*');
-
+        const { data, error } = await supabase.from('products').select('*');
         if (error) throw error;
         setProducts(data || []);
       } catch (err) {
@@ -76,20 +80,32 @@ function ProductsContent() {
         setIsLoading(false);
       }
     };
-
     fetchProducts();
   }, []);
 
-  // 2. Đồng bộ hóa thanh tìm kiếm khi URL thay đổi
+  // 2. Đồng bộ hóa ô tìm kiếm khi URL thay đổi
   useEffect(() => {
     setSearchTerm(queryParam);
   }, [queryParam]);
 
-  // 3. Áp dụng tìm kiếm, lọc và sắp xếp
+  // 3. Đóng dropdown khi click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setActiveDropdown(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // 4. Áp dụng tìm kiếm, lọc và sắp xếp chính thức
   useEffect(() => {
     let result = [...products];
 
-    // Lọc theo từ khóa tìm kiếm (q hoặc searchTerm)
+    // Lọc theo từ khóa tìm kiếm (q hoặc searchTerm) - Sử dụng thuật toán Prefix Matching
     if (queryParam) {
       const removeVietnameseTones = (str: string) => {
         return str
@@ -107,7 +123,6 @@ function ProductsContent() {
           const nameClean = removeVietnameseTones(p.name || '');
           const brandClean = removeVietnameseTones(p.brand || '');
           const descClean = removeVietnameseTones(p.description || '');
-          
           const productWords = `${nameClean} ${brandClean} ${descClean}`.split(/[\s\-\/\,\.\(\)]+/).filter(Boolean);
           
           return queryWords.every(qw => 
@@ -122,23 +137,13 @@ function ProductsContent() {
       result = result.filter((p) => p.category === categoryParam);
     }
 
-    // Lọc theo hãng (brand)
+    // Lọc theo thương hiệu (brand)
     if (selectedBrands.length > 0) {
       result = result.filter((p) => selectedBrands.includes(p.brand));
     }
 
-    // Lọc theo khoảng giá
-    if (selectedPriceRange !== 'all') {
-      if (selectedPriceRange === 'under-5m') {
-        result = result.filter((p) => p.price < 5000000);
-      } else if (selectedPriceRange === '5m-10m') {
-        result = result.filter((p) => p.price >= 5000000 && p.price <= 10000000);
-      } else if (selectedPriceRange === '10m-20m') {
-        result = result.filter((p) => p.price >= 10000000 && p.price <= 20000000);
-      } else if (selectedPriceRange === 'over-20m') {
-        result = result.filter((p) => p.price > 20000000);
-      }
-    }
+    // Lọc theo khoảng giá tuỳ chỉnh
+    result = result.filter((p) => p.price >= priceRange.min && p.price <= priceRange.max);
 
     // Sắp xếp
     if (sortBy === 'price-asc') {
@@ -150,15 +155,40 @@ function ProductsContent() {
     }
 
     setFilteredProducts(result);
-  }, [products, queryParam, categoryParam, selectedBrands, selectedPriceRange, sortBy]);
+  }, [products, queryParam, categoryParam, selectedBrands, priceRange, sortBy]);
 
-  // Các hàm xử lý tương tác bộ lọc
-  const handleBrandChange = (brand: string) => {
-    if (selectedBrands.includes(brand)) {
-      setSelectedBrands(selectedBrands.filter((b) => b !== brand));
-    } else {
-      setSelectedBrands([...selectedBrands, brand]);
+  // Đồng bộ hoá trạng thái tạm thời khi mở Dropdown
+  const openDropdown = (type: 'brand' | 'price' | 'sort') => {
+    if (activeDropdown === type) {
+      setActiveDropdown(null);
+      return;
     }
+    setActiveDropdown(type);
+    if (type === 'brand') {
+      setTempSelectedBrands([...selectedBrands]);
+    } else if (type === 'price') {
+      setTempPriceRange({ ...priceRange });
+    }
+  };
+
+  const handleBrandTempChange = (brand: string) => {
+    if (tempSelectedBrands.includes(brand)) {
+      setTempSelectedBrands(tempSelectedBrands.filter((b) => b !== brand));
+    } else {
+      setTempSelectedBrands([...tempSelectedBrands, brand]);
+    }
+  };
+
+  // Xác nhận lưu bộ lọc hãng
+  const applyBrandFilter = () => {
+    setSelectedBrands([...tempSelectedBrands]);
+    setActiveDropdown(null);
+  };
+
+  // Xác nhận lưu bộ lọc khoảng giá
+  const applyPriceFilter = () => {
+    setPriceRange({ ...tempPriceRange });
+    setActiveDropdown(null);
   };
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -174,7 +204,7 @@ function ProductsContent() {
 
   const handleClearFilters = () => {
     setSelectedBrands([]);
-    setSelectedPriceRange('all');
+    setPriceRange({ min: 0, max: MAX_PRICE_LIMIT });
     setSortBy('featured');
     const params = new URLSearchParams();
     if (categoryParam) params.set('category', categoryParam);
@@ -199,196 +229,345 @@ function ProductsContent() {
     alert(`Đã thêm "${prod.name}" vào giỏ hàng!`);
   };
 
-  // Trích xuất danh sách các thương hiệu độc nhất của các sản phẩm hiển thị để làm bộ lọc
-  const availableBrands = Array.from(new Set(products.map((p) => p.brand)));
+  // Lấy danh sách thương hiệu độc nhất từ sản phẩm
+  const availableBrands = Array.from(new Set(products.map((p) => p.brand))).filter(Boolean);
 
   return (
-    <div className="container mx-auto px-4 py-8 flex-1 flex flex-col md:flex-row gap-8 transition-colors duration-200">
-      {/* 1. SIDEBAR BỘ LỌC (Trái) */}
-      <aside className="w-full md:w-64 space-y-6 flex-shrink-0">
-        <div className="flex items-center justify-between border-b border-border pb-4">
-          <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
-            <SlidersHorizontal className="w-4 h-4 text-primary" />
-            <span>Bộ lọc tìm kiếm</span>
-          </h2>
-          {(selectedBrands.length > 0 || selectedPriceRange !== 'all' || queryParam) && (
-            <button
-              onClick={handleClearFilters}
-              className="text-xs text-primary hover:underline flex items-center gap-1 cursor-pointer"
-            >
-              <X className="w-3 h-3" />
-              <span>Xóa bộ lọc</span>
-            </button>
+    <div className="container mx-auto px-4 py-8 flex-1 flex flex-col gap-6 transition-colors duration-200">
+      
+      {/* TIÊU ĐỀ & RESET BỘ LỌC */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-black text-foreground flex items-center gap-2">
+            <Filter className="w-5 h-5 text-red-600 dark:text-red-500" />
+            <span>DANH SÁCH SẢN PHẨM</span>
+          </h1>
+          {categoryParam && (
+            <p className="text-xs text-muted-foreground mt-1">
+              Đang xem danh mục: <span className="text-foreground font-bold uppercase">{categoryParam}</span>
+            </p>
+          )}
+        </div>
+        {(selectedBrands.length > 0 || priceRange.min > 0 || priceRange.max < MAX_PRICE_LIMIT || queryParam) && (
+          <button
+            onClick={handleClearFilters}
+            className="text-xs text-red-600 dark:text-red-500 hover:text-red-700 dark:hover:text-red-400 font-bold flex items-center gap-1.5 cursor-pointer bg-red-600/10 hover:bg-red-600/15 px-3 py-1.5 rounded-xl transition-all"
+          >
+            <X className="w-3.5 h-3.5" />
+            <span>Xóa tất cả bộ lọc</span>
+          </button>
+        )}
+      </div>
+
+      {/* THANH BỘ LỌC NGANG CHUYÊN NGHIỆP (Dropdown Popovers) */}
+      <div ref={dropdownRef} className="flex flex-wrap items-center gap-3 relative z-30">
+        
+        {/* Nút Bộ Lọc nhanh */}
+        <div className="flex items-center gap-2 px-3 py-2 bg-red-600/10 border border-red-600/20 text-red-600 dark:text-red-500 rounded-xl text-xs font-black select-none">
+          <SlidersHorizontal className="w-3.5 h-3.5" />
+          <span>Bộ lọc</span>
+        </div>
+
+        {/* 1. DROP DOWN THƯƠNG HIỆU */}
+        <div className="relative">
+          <button
+            onClick={() => openDropdown('brand')}
+            className={`flex items-center gap-1.5 px-4 py-2 border rounded-xl text-xs font-extrabold cursor-pointer transition-all ${
+              activeDropdown === 'brand' || selectedBrands.length > 0
+                ? 'bg-primary/10 border-primary text-primary'
+                : 'bg-card border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground/35'
+            }`}
+          >
+            <span>Thương hiệu {selectedBrands.length > 0 && `(${selectedBrands.length})`}</span>
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${activeDropdown === 'brand' ? 'rotate-180' : ''}`} />
+          </button>
+
+          {activeDropdown === 'brand' && (
+            <div className="absolute top-full left-0 mt-2 w-64 bg-card/95 backdrop-blur-md border border-border rounded-2xl shadow-2xl p-4 z-40 animate-in fade-in slide-in-from-top-2 duration-150">
+              <h4 className="text-xs font-black uppercase text-muted-foreground tracking-wider mb-3 select-none">Chọn thương hiệu</h4>
+              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                {availableBrands.map((brand) => (
+                  <div
+                    key={brand}
+                    onClick={() => handleBrandTempChange(brand)}
+                    className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl hover:bg-muted/60 cursor-pointer transition-colors group select-none border border-transparent"
+                  >
+                    {/* Custom Checkbox */}
+                    <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
+                      tempSelectedBrands.includes(brand)
+                        ? 'bg-red-600 border-red-600 text-white'
+                        : 'border-muted-foreground/35 bg-background group-hover:border-foreground/50'
+                    }`}>
+                      {tempSelectedBrands.includes(brand) && (
+                        <Check className="w-3 h-3 stroke-[3]" />
+                      )}
+                    </div>
+                    <span className={`text-xs font-semibold transition-colors ${
+                      tempSelectedBrands.includes(brand) ? 'text-foreground font-bold' : 'text-muted-foreground group-hover:text-foreground'
+                    }`}>
+                      {brand}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 border-t border-border mt-3 pt-3">
+                <button
+                  onClick={() => setActiveDropdown(null)}
+                  className="flex-1 py-2 text-xs font-extrabold border border-border hover:bg-muted/50 rounded-xl transition-colors cursor-pointer"
+                >
+                  Đóng
+                </button>
+                <button
+                  onClick={applyBrandFilter}
+                  className="flex-1 py-2 text-xs font-extrabold bg-red-600 hover:bg-red-700 text-white rounded-xl transition-colors cursor-pointer shadow-md shadow-red-600/10"
+                >
+                  Xem kết quả
+                </button>
+              </div>
+            </div>
           )}
         </div>
 
-        {/* Lọc danh mục hiện tại (chỉ hiển thị nhãn) */}
-        {categoryParam && (
-          <div className="p-3 rounded-xl bg-card border border-border text-xs flex justify-between items-center text-muted-foreground">
-            <span>Danh mục: <strong className="text-foreground uppercase">{categoryParam}</strong></span>
-            <Link href="/products" className="text-muted-foreground hover:text-foreground">
-              <X className="w-3.5 h-3.5" />
-            </Link>
-          </div>
-        )}
+        {/* 2. DROP DOWN KHOẢNG GIÁ */}
+        <div className="relative">
+          <button
+            onClick={() => openDropdown('price')}
+            className={`flex items-center gap-1.5 px-4 py-2 border rounded-xl text-xs font-extrabold cursor-pointer transition-all ${
+              activeDropdown === 'price' || priceRange.min > 0 || priceRange.max < MAX_PRICE_LIMIT
+                ? 'bg-primary/10 border-primary text-primary'
+                : 'bg-card border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground/35'
+            }`}
+          >
+            <span>
+              {priceRange.min === 0 && priceRange.max === MAX_PRICE_LIMIT
+                ? 'Chọn mức giá'
+                : `${formatPrice(priceRange.min)} - ${formatPrice(priceRange.max)}`}
+            </span>
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${activeDropdown === 'price' ? 'rotate-180' : ''}`} />
+          </button>
 
-        {/* Lọc theo Hãng */}
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-foreground">Thương hiệu</h3>
-          <div className="space-y-2 max-h-48 overflow-y-auto pr-2 scrollbar-thin">
-            {availableBrands.map((brand) => (
-              <label key={brand} className="flex items-center gap-2.5 text-muted-foreground text-sm cursor-pointer hover:text-foreground select-none">
-                <input
-                  type="checkbox"
-                  checked={selectedBrands.includes(brand)}
-                  onChange={() => handleBrandChange(brand)}
-                  className="rounded border-border bg-background text-primary focus:ring-primary focus:ring-offset-background w-4 h-4 cursor-pointer"
-                />
-                <span>{brand}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-
-        {/* Lọc theo Giá */}
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-foreground">Khoảng giá</h3>
-          <div className="space-y-2 text-sm text-muted-foreground">
-            {[
-              { id: 'all', label: 'Tất cả mức giá' },
-              { id: 'under-5m', label: 'Dưới 5,000,000đ' },
-              { id: '5m-10m', label: '5,000,000đ - 10,000,000đ' },
-              { id: '10m-20m', label: '10,000,000đ - 20,000,000đ' },
-              { id: 'over-20m', label: 'Trên 20,000,000đ' },
-            ].map((range) => (
-              <label key={range.id} className="flex items-center gap-2.5 cursor-pointer hover:text-foreground select-none">
-                <input
-                  type="radio"
-                  name="price-range"
-                  checked={selectedPriceRange === range.id}
-                  onChange={() => setSelectedPriceRange(range.id)}
-                  className="border-border bg-background text-primary focus:ring-primary focus:ring-offset-background w-4 h-4 cursor-pointer"
-                />
-                <span>{range.label}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-      </aside>
-
-      {/* 2. KHU VỰC SẢN PHẨM (Phải) */}
-      <div className="flex-1 space-y-6">
-        {/* Tìm kiếm & Sắp xếp Header */}
-        <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center justify-between bg-card/40 border border-border rounded-2xl p-4">
-          {/* Ô nhập tìm kiếm trong trang */}
-          <form onSubmit={handleSearchSubmit} className="relative flex-1 max-w-sm">
-            <input
-              type="text"
-              placeholder="Tìm kiếm trong danh sách..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full h-10 pl-4 pr-10 rounded-xl border border-border bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary text-xs sm:text-sm"
-            />
-            <button type="submit" className="absolute right-3 top-3 text-muted-foreground hover:text-foreground transition-colors">
-              <Search className="w-4 h-4" />
-            </button>
-          </form>
-
-          {/* Sắp xếp */}
-          <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
-            <ArrowUpDown className="w-4 h-4 text-primary flex-shrink-0" />
-            <span className="whitespace-nowrap">Sắp xếp:</span>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="bg-background border border-border rounded-xl h-10 px-3 text-foreground focus:outline-none focus:border-primary cursor-pointer"
-            >
-              <option value="featured">Nổi bật</option>
-              <option value="price-asc">Giá tăng dần</option>
-              <option value="price-desc">Giá giảm dần</option>
-              <option value="rating">Đánh giá cao nhất</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Kết quả tìm kiếm */}
-        <div>
-          <p className="text-xs sm:text-sm text-muted-foreground">
-            Tìm thấy <strong className="text-foreground">{filteredProducts.length}</strong> sản phẩm phù hợp.
-          </p>
-        </div>
-
-        {/* Danh sách lưới sản phẩm */}
-        {isLoading ? (
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
-            {[1, 2, 3, 4, 5, 6].map((i) => (
-              <div key={i} className="h-80 rounded-2xl bg-card/60 animate-pulse border border-border" />
-            ))}
-          </div>
-        ) : filteredProducts.length === 0 ? (
-          <div className="text-center py-16 border border-dashed border-border rounded-2xl">
-            <p className="text-muted-foreground mb-2">Không tìm thấy sản phẩm nào khớp với bộ lọc của bạn.</p>
-            <button
-              onClick={handleClearFilters}
-              className="text-xs px-4 py-2 bg-primary hover:opacity-90 text-primary-foreground rounded-full font-bold mt-2 cursor-pointer"
-            >
-              Làm mới bộ lọc
-            </button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredProducts.map((prod) => (
-              <Link
-                key={prod.id}
-                href={`/products/${prod.id}`}
-                className="group rounded-2xl border border-border bg-card/30 hover:bg-card/70 hover:border-muted-foreground/35 p-4 flex flex-col justify-between transition-all duration-300 relative overflow-hidden"
-              >
-                <div className="space-y-4">
-                  {/* Ảnh */}
-                  <div className="w-full aspect-square rounded-xl bg-background flex items-center justify-center overflow-hidden relative border border-border/40">
-                    <img
-                      src={prod.images[0]}
-                      alt={prod.name}
-                      className="w-[85%] h-[85%] object-contain transform group-hover:scale-105 transition-transform duration-300"
-                    />
-                    {prod.rating_avg && (
-                      <span className="absolute top-2 right-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-background/90 border border-border text-[10px] text-yellow-500 font-bold">
-                        <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                        <span>{prod.rating_avg}</span>
-                      </span>
-                    )}
-                  </div>
-                  {/* Info */}
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-primary tracking-wider">
-                      {prod.brand}
-                    </span>
-                    <h3 className="font-bold text-foreground text-sm md:text-base line-clamp-1 group-hover:text-primary transition-colors mt-0.5">
-                      {prod.name}
-                    </h3>
-                    <p className="text-muted-foreground text-xs line-clamp-2 mt-1.5 leading-relaxed">
-                      {prod.description}
-                    </p>
-                  </div>
+          {activeDropdown === 'price' && (
+            <div className="absolute top-full left-0 mt-2 w-80 bg-card/95 backdrop-blur-md border border-border rounded-2xl shadow-2xl p-5 z-40 animate-in fade-in slide-in-from-top-2 duration-150">
+              <h4 className="text-xs font-black uppercase text-muted-foreground tracking-wider mb-4 select-none">Lọc khoảng giá</h4>
+              
+              {/* Hai ô nhập giá trực tiếp */}
+              <div className="flex items-center gap-2">
+                <div className="flex-1 relative">
+                  <input
+                    type="number"
+                    value={tempPriceRange.min}
+                    onChange={(e) => setTempPriceRange({ ...tempPriceRange, min: Math.min(Number(e.target.value), tempPriceRange.max - 500000) })}
+                    className="w-full h-10 px-3 pr-8 rounded-xl border border-border bg-background text-foreground text-xs focus:outline-none focus:border-red-600 font-extrabold transition-all"
+                  />
+                  <span className="absolute right-3 top-3 text-[10px] text-muted-foreground font-black">đ</span>
                 </div>
+                <span className="text-muted-foreground font-bold">-</span>
+                <div className="flex-1 relative">
+                  <input
+                    type="number"
+                    value={tempPriceRange.max}
+                    onChange={(e) => setTempPriceRange({ ...tempPriceRange, max: Math.max(Number(e.target.value), tempPriceRange.min + 500000) })}
+                    className="w-full h-10 px-3 pr-8 rounded-xl border border-border bg-background text-foreground text-xs focus:outline-none focus:border-red-600 font-extrabold transition-all"
+                  />
+                  <span className="absolute right-3 top-3 text-[10px] text-muted-foreground font-black">đ</span>
+                </div>
+              </div>
 
-                <div className="flex items-center justify-between gap-2 mt-4 border-t border-border/50 pt-3">
-                  <span className="font-extrabold text-primary text-sm md:text-base whitespace-nowrap">
+              {/* Slider kéo kép (Double Range Slider) */}
+              <div className="my-6 px-1.5">
+                <div className="relative w-full h-1.5 bg-muted rounded-full">
+                  <div
+                    className="absolute h-1.5 bg-red-600 dark:bg-red-500 rounded-full"
+                    style={{
+                      left: `${(tempPriceRange.min / MAX_PRICE_LIMIT) * 100}%`,
+                      right: `${100 - (tempPriceRange.max / MAX_PRICE_LIMIT) * 100}%`
+                    }}
+                  />
+                  <input
+                    type="range"
+                    min={0}
+                    max={MAX_PRICE_LIMIT}
+                    step={500000}
+                    value={tempPriceRange.min}
+                    onChange={(e) => {
+                      const val = Math.min(Number(e.target.value), tempPriceRange.max - 1000000);
+                      setTempPriceRange({ ...tempPriceRange, min: val });
+                    }}
+                    className="absolute w-full h-1.5 top-0 left-0 appearance-none bg-transparent pointer-events-none focus:outline-none"
+                    style={{
+                      zIndex: tempPriceRange.min > MAX_PRICE_LIMIT / 2 ? 5 : 3
+                    }}
+                  />
+                  <input
+                    type="range"
+                    min={0}
+                    max={MAX_PRICE_LIMIT}
+                    step={500000}
+                    value={tempPriceRange.max}
+                    onChange={(e) => {
+                      const val = Math.max(Number(e.target.value), tempPriceRange.min + 1000000);
+                      setTempPriceRange({ ...tempPriceRange, max: val });
+                    }}
+                    className="absolute w-full h-1.5 top-0 left-0 appearance-none bg-transparent pointer-events-none focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 border-t border-border mt-3 pt-3">
+                <button
+                  onClick={() => setActiveDropdown(null)}
+                  className="flex-1 py-2 text-xs font-extrabold border border-border hover:bg-muted/50 rounded-xl transition-colors cursor-pointer"
+                >
+                  Đóng
+                </button>
+                <button
+                  onClick={applyPriceFilter}
+                  className="flex-1 py-2 text-xs font-extrabold bg-red-600 hover:bg-red-700 text-white rounded-xl transition-colors cursor-pointer shadow-md shadow-red-600/10"
+                >
+                  Xem kết quả
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 3. DROP DOWN SẮP XẾP */}
+        <div className="relative ml-auto">
+          <button
+            onClick={() => openDropdown('sort')}
+            className={`flex items-center gap-1.5 px-4 py-2 border rounded-xl text-xs font-extrabold cursor-pointer transition-all ${
+              sortBy !== 'featured'
+                ? 'bg-primary/10 border-primary text-primary'
+                : 'bg-card border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground/35'
+            }`}
+          >
+            <ArrowUpDown className="w-3.5 h-3.5" />
+            <span>
+              Sắp xếp:{' '}
+              {sortBy === 'featured' && 'Nổi bật'}
+              {sortBy === 'price-asc' && 'Giá tăng dần'}
+              {sortBy === 'price-desc' && 'Giá giảm dần'}
+              {sortBy === 'rating' && 'Đánh giá'}
+            </span>
+            <ChevronDown className="w-3.5 h-3.5" />
+          </button>
+
+          {activeDropdown === 'sort' && (
+            <div className="absolute top-full right-0 mt-2 w-48 bg-card/95 backdrop-blur-md border border-border rounded-2xl shadow-2xl p-2 z-40 animate-in fade-in slide-in-from-top-2 duration-150">
+              {[
+                { id: 'featured', label: 'Nổi bật' },
+                { id: 'price-asc', label: 'Giá tăng dần' },
+                { id: 'price-desc', label: 'Giá giảm dần' },
+                { id: 'rating', label: 'Đánh giá cao nhất' },
+              ].map((opt) => (
+                <div
+                  key={opt.id}
+                  onClick={() => {
+                    setSortBy(opt.id);
+                    setActiveDropdown(null);
+                  }}
+                  className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-xs cursor-pointer transition-colors ${
+                    sortBy === opt.id
+                      ? 'bg-primary/10 text-primary font-black'
+                      : 'hover:bg-muted/60 text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <span>{opt.label}</span>
+                  {sortBy === opt.id && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* TÌM KIẾM TRONG DANH SÁCH & SỐ LƯỢNG */}
+      <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center justify-between bg-card/45 border border-border rounded-2xl p-4">
+        <form onSubmit={handleSearchSubmit} className="relative flex-1 max-w-sm">
+          <input
+            type="text"
+            placeholder="Tìm kiếm trong danh sách..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full h-10 pl-4 pr-10 rounded-xl border border-border bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary text-xs sm:text-sm font-semibold"
+          />
+          <button type="submit" className="absolute right-3 top-3 text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
+            <Search className="w-4.5 h-4.5" />
+          </button>
+        </form>
+
+        <p className="text-xs sm:text-sm text-muted-foreground font-medium self-center">
+          Tìm thấy <strong className="text-foreground font-black">{filteredProducts.length}</strong> sản phẩm phù hợp.
+        </p>
+      </div>
+
+      {/* DANH SÁCH SẢN PHẨM */}
+      {isLoading ? (
+        <div className="flex flex-col items-center justify-center py-20 gap-3">
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs text-muted-foreground font-medium">Đang tải danh sách sản phẩm...</p>
+        </div>
+      ) : filteredProducts.length === 0 ? (
+        <div className="text-center py-20 bg-card/35 rounded-3xl border border-border border-dashed">
+          <SlidersHorizontal className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-60" />
+          <h3 className="text-sm font-black text-foreground uppercase mb-1">Không tìm thấy sản phẩm nào</h3>
+          <p className="text-xs text-muted-foreground">Hãy thử điều chỉnh bộ lọc hoặc từ khóa tìm kiếm khác.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {filteredProducts.map((prod) => (
+            <Link
+              key={prod.id}
+              href={`/products/${prod.id}`}
+              className="group bg-card hover:bg-card/75 border border-border rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full"
+            >
+              {/* Ảnh */}
+              <div className="relative aspect-square w-full overflow-hidden bg-muted/35 border-b border-border/60">
+                <img
+                  src={prod.images?.[0] || 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=600'}
+                  alt={prod.name}
+                  className="h-full w-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
+                />
+                <span className="absolute top-3 left-3 bg-card/90 backdrop-blur-sm border border-border text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded-md text-muted-foreground">
+                  {prod.brand}
+                </span>
+                {prod.rating_avg && (
+                  <div className="absolute top-3 right-3 flex items-center gap-0.5 bg-black/60 backdrop-blur-sm border border-white/10 px-1.5 py-0.5 rounded-md text-[10px] font-black text-amber-400">
+                    <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                    <span>{prod.rating_avg.toFixed(1)}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Chi tiết */}
+              <div className="p-4 flex flex-col flex-1 gap-2">
+                <span className="text-[10px] font-black text-primary uppercase tracking-wider">
+                  {prod.category}
+                </span>
+                <h3 className="text-xs sm:text-sm font-extrabold text-foreground group-hover:text-primary transition-colors line-clamp-2 min-h-[40px]">
+                  {prod.name}
+                </h3>
+                <p className="text-[11px] text-muted-foreground line-clamp-2 flex-1">
+                  {prod.description}
+                </p>
+                <div className="flex items-center justify-between border-t border-border/60 pt-3 mt-1">
+                  <span className="text-xs sm:text-sm font-black text-foreground">
                     {formatPrice(prod.price)}
                   </span>
                   <button
                     onClick={(e) => handleAddToCart(e, prod)}
-                    className="p-2 rounded-xl bg-primary hover:opacity-90 text-primary-foreground shadow-md shadow-primary/10 active:scale-95 transition-all cursor-pointer"
-                    title="Thêm vào giỏ"
+                    className="flex items-center justify-center p-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground transition-all cursor-pointer shadow-md shadow-primary/10 hover:shadow-primary/25"
+                    title="Thêm vào giỏ hàng"
                   >
                     <ShoppingCart className="w-4 h-4" />
                   </button>
                 </div>
-              </Link>
-            ))}
-          </div>
-        )}
-      </div>
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
+
     </div>
   );
 }
@@ -396,15 +575,12 @@ function ProductsContent() {
 export default function ProductsPage() {
   return (
     <Suspense fallback={
-      <div className="container mx-auto px-4 py-16 flex items-center justify-center flex-1">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm text-muted-foreground">Đang tải danh sách sản phẩm...</span>
-        </div>
+      <div className="flex-1 flex flex-col items-center justify-center py-20 gap-3">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        <p className="text-xs text-muted-foreground font-medium">Đang chuẩn bị danh sách...</p>
       </div>
     }>
       <ProductsContent />
     </Suspense>
   );
 }
-

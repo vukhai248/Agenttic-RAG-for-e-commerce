@@ -95,3 +95,64 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Tùy biến thanh cuộn scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.35);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.6);
+}
+
+/* Ẩn track và làm đẹp thumb của double range slider */
+input[type='range']::-webkit-slider-runnable-track {
+  background: transparent;
+  border: none;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  pointer-events: auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 3.5px solid #ef4444;
+  cursor: pointer;
+  -webkit-appearance: none;
+  margin-top: -5px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+  transition: transform 0.1s, border-color 0.1s;
+}
+
+input[type='range']::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  border-color: #dc2626;
+}
+
+input[type='range']::-moz-range-track {
+  background: transparent;
+  border: none;
+}
+
+input[type='range']::-moz-range-thumb {
+  pointer-events: auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 3.5px solid #ef4444;
+  cursor: pointer;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+  transition: transform 0.1s;
+}
