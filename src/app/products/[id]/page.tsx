@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useCart } from '@/store/useCart';
-import { Star, ShoppingCart, ShieldCheck, Truck, RefreshCw, ChevronLeft, Cpu, HardDrive, Layers } from 'lucide-react';
+import { Star, ShoppingCart, ShieldCheck, Truck, RefreshCw, ChevronLeft, Cpu, HardDrive, Layers, Gift, CreditCard } from 'lucide-react';
 import Link from 'next/link';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -436,21 +436,27 @@ export default function ProductDetailPage() {
               if (lower.includes('chính hãng') || lower.includes('bảo hành') || lower.includes('cam kết') || lower.includes('an tâm') || lower.includes('shield')) {
                 return <ShieldCheck className="w-5 h-5 text-emerald-500" />;
               }
-              if (lower.includes('giao') || lower.includes('ship') || lower.includes('vận chuyển') || lower.includes('nhanh') || lower.includes('vận') || lower.includes('xe')) {
+              if (lower.includes('giao') || lower.includes('ship') || lower.includes('vận chuyển') || lower.includes('nhanh') || lower.includes('hỏa tốc') || lower.includes('vận') || lower.includes('xe')) {
                 return <Truck className="w-5 h-5 text-primary" />;
               }
               if (lower.includes('đổi') || lower.includes('trả') || lower.includes('hoàn') || lower.includes('1 đổi 1') || lower.includes('ref')) {
                 return <RefreshCw className="w-5 h-5 text-primary" />;
               }
+              if (lower.includes('góp') || lower.includes('lãi') || lower.includes('thẻ') || lower.includes('credit') || lower.includes('card')) {
+                return <CreditCard className="w-5 h-5 text-indigo-500" />;
+              }
+              if (lower.includes('tặng') || lower.includes('quà') || lower.includes('ưu đãi') || lower.includes('khuyến mại') || lower.includes('giảm') || lower.includes('gift') || lower.includes('voucher')) {
+                return <Gift className="w-5 h-5 text-rose-500" />;
+              }
               return <Star className="w-5 h-5 text-amber-500" />;
             };
 
             return (
-              <div className="grid grid-cols-3 gap-3 border-y border-border py-4 text-xs text-muted-foreground">
-                {policies.slice(0, 3).map((policy: string, idx: number) => (
-                  <div key={idx} className="flex flex-col items-center text-center gap-2">
+              <div className="flex flex-wrap items-center justify-around gap-4 border-y border-border py-4 text-xs text-muted-foreground">
+                {policies.map((policy: string, idx: number) => (
+                  <div key={idx} className="flex flex-col items-center text-center gap-2 flex-1 min-w-[80px]">
                     {getPolicyIcon(policy)}
-                    <span>{policy}</span>
+                    <span className="font-semibold">{policy}</span>
                   </div>
                 ))}
               </div>
