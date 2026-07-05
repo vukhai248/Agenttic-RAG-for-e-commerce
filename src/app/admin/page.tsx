@@ -1358,7 +1358,29 @@ export default function AdminPage() {
 
   // Lọc sản phẩm
   const filteredProducts = products.filter(p => {
-    const matchesSearch = p.name.toLowerCase().includes(prodSearch.toLowerCase()) || p.brand.toLowerCase().includes(prodSearch.toLowerCase());
+    let matchesSearch = true;
+    if (prodSearch.trim()) {
+      const removeVietnameseTones = (str: string) => {
+        return str
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/đ/g, 'd')
+          .replace(/Đ/g, 'D')
+          .toLowerCase();
+      };
+      const qClean = removeVietnameseTones(prodSearch.trim());
+      if (qClean) {
+        const queryWords = qClean.split(/\s+/).filter(Boolean);
+        const nameClean = removeVietnameseTones(p.name || '');
+        const brandClean = removeVietnameseTones(p.brand || '');
+        const descClean = removeVietnameseTones(p.description || '');
+        const productWords = `${nameClean} ${brandClean} ${descClean}`.split(/[\s\-\/\,\.\(\)]+/).filter(Boolean);
+        
+        matchesSearch = queryWords.every(qw => 
+          productWords.some(pw => pw.startsWith(qw))
+        );
+      }
+    }
     const matchesCategory = prodFilterCategory ? p.category === prodFilterCategory : true;
     return matchesSearch && matchesCategory;
   });
