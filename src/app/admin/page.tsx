@@ -770,7 +770,18 @@ export default function AdminPage() {
 
   // Helper đảm bảo có các tag chính sách mặc định trong mảng
   const ensureDefaultPolicyTags = (tags: VariantTag[]) => {
-    const defaultPolicies = ['Chính hãng 100%', 'Giao nhanh toàn quốc', 'Lỗi 1 đổi 1'];
+    const defaultPolicies = [
+      'Chính hãng 100%',
+      'Giao nhanh toàn quốc',
+      'Lỗi 1 đổi 1',
+      '1 đổi 1 trong 14 ngày',
+      'Miễn phí giao hàng',
+      'Trả góp 0% lãi suất',
+      'Bảo hành 12 tháng',
+      'Giao hỏa tốc 2h',
+      'Hoàn tiền 200% nếu giả',
+      'Thu cũ đổi mới trợ giá'
+    ];
     defaultPolicies.forEach(val => {
       if (!tags.some(t => t.type === 'policy' && t.value.toLowerCase() === val.toLowerCase())) {
         tags.push({
@@ -2656,11 +2667,16 @@ export default function AdminPage() {
                                   'Chính hãng 100%',
                                   'Giao nhanh toàn quốc',
                                   'Lỗi 1 đổi 1',
+                                  '1 đổi 1 trong 14 ngày',
+                                  'Miễn phí giao hàng',
+                                  'Trả góp 0% lãi suất',
                                   'Bảo hành 12 tháng',
-                                  'Lỗi 1 đổi 1 trong 30 ngày',
-                                  'Giao nhanh 2h',
-                                  'Bảo hành 24 tháng',
-                                  'Hoàn tiền 111% nếu giả'
+                                  'Giao hỏa tốc 2h',
+                                  'Hoàn tiền 200% nếu giả',
+                                  'Thu cũ đổi mới trợ giá',
+                                  'Bao giá tốt nhất',
+                                  'Tặng voucher 500k',
+                                  'Hỗ trợ kỹ thuật 24/7'
                                 ];
                                 const newTags = [...availableTags];
                                 samples.forEach(s => {
