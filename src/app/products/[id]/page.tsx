@@ -12,6 +12,7 @@ import Link from 'next/link';
 // ─────────────────────────────────────────────────────────────────────────────
 const HIDDEN_SPEC_KEYS = new Set([
   'original_link', 'ratings_count', 'color_options', 'color_images', 'variants',
+  'available_tags', 'availableTags', 'warranty_tags', 'warrantyTags', 'promo_tags', 'promoTags'
 ]);
 
 // Tên tiếng Việt cho các trường spec phổ biến
@@ -424,20 +425,37 @@ export default function ProductDetailPage() {
           </div>
 
           {/* Cam kết dịch vụ */}
-          <div className="grid grid-cols-3 gap-3 border-y border-border py-4 text-xs text-muted-foreground">
-            <div className="flex flex-col items-center text-center gap-2">
-              <ShieldCheck className="w-5 h-5 text-emerald-500" />
-              <span>Chính hãng 100%</span>
-            </div>
-            <div className="flex flex-col items-center text-center gap-2">
-              <Truck className="w-5 h-5 text-primary" />
-              <span>Giao nhanh toàn quốc</span>
-            </div>
-            <div className="flex flex-col items-center text-center gap-2">
-              <RefreshCw className="w-5 h-5 text-primary" />
-              <span>Lỗi 1 đổi 1</span>
-            </div>
-          </div>
+          {(() => {
+            const defaultPolicies = ['Chính hãng 100%', 'Giao nhanh toàn quốc', 'Lỗi 1 đổi 1'];
+            const policies = (product.specs?.policy_tags && Array.isArray(product.specs.policy_tags) && product.specs.policy_tags.length > 0)
+              ? product.specs.policy_tags
+              : defaultPolicies;
+
+            const getPolicyIcon = (text: string) => {
+              const lower = text.toLowerCase();
+              if (lower.includes('chính hãng') || lower.includes('bảo hành') || lower.includes('cam kết') || lower.includes('an tâm') || lower.includes('shield')) {
+                return <ShieldCheck className="w-5 h-5 text-emerald-500" />;
+              }
+              if (lower.includes('giao') || lower.includes('ship') || lower.includes('vận chuyển') || lower.includes('nhanh') || lower.includes('vận') || lower.includes('xe')) {
+                return <Truck className="w-5 h-5 text-primary" />;
+              }
+              if (lower.includes('đổi') || lower.includes('trả') || lower.includes('hoàn') || lower.includes('1 đổi 1') || lower.includes('ref')) {
+                return <RefreshCw className="w-5 h-5 text-primary" />;
+              }
+              return <Star className="w-5 h-5 text-amber-500" />;
+            };
+
+            return (
+              <div className="grid grid-cols-3 gap-3 border-y border-border py-4 text-xs text-muted-foreground">
+                {policies.slice(0, 3).map((policy: string, idx: number) => (
+                  <div key={idx} className="flex flex-col items-center text-center gap-2">
+                    {getPolicyIcon(policy)}
+                    <span>{policy}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
 
           {/* Mô tả */}
           <p className="text-muted-foreground text-sm leading-relaxed">{product.description}</p>
@@ -622,39 +640,7 @@ export default function ProductDetailPage() {
         <div className="md:col-span-2 space-y-4">
           <h2 className="text-lg font-bold text-foreground">Thông số kỹ thuật chi tiết</h2>
 
-          {/* Bảng variants (cấu hình) nếu có */}
-          {dbVariants.length > 0 && (
-            <div className="rounded-2xl border border-border bg-card/30 overflow-hidden mb-4">
-              <div className="px-4 py-3 bg-primary/5 border-b border-border flex items-center gap-2">
-                <Cpu className="w-4 h-4 text-primary" />
-                <span className="font-bold text-sm text-foreground">Các phiên bản có sẵn</span>
-              </div>
-              <div className="divide-y divide-border/50">
-                {dbVariants.map((v: any, idx: number) => (
-                  <div key={idx} className="flex items-center justify-between px-4 py-3 text-sm hover:bg-muted/30 transition-colors">
-                    <div className="space-y-0.5">
-                      <span className="font-semibold text-foreground">{v.label}</span>
-                      {(v.ram || v.storage) && (
-                        <div className="flex gap-3 text-xs text-muted-foreground">
-                          {v.ram && (
-                            <span className="flex items-center gap-1">
-                              <Cpu className="w-3 h-3" /> RAM: {v.ram}
-                            </span>
-                          )}
-                          {v.storage && (
-                            <span className="flex items-center gap-1">
-                              <HardDrive className="w-3 h-3" /> Bộ nhớ: {v.storage}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    <span className="font-bold text-primary text-sm">{formatPrice(v.price || product.price)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+
 
           {/* Bảng specs kỹ thuật */}
           {displaySpecs.length > 0 ? (

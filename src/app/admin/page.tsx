@@ -63,7 +63,7 @@ interface ColorRow {
 
 interface VariantTag {
   id: string;
-  type: 'color' | 'ram_rom' | 'condition';
+  type: 'color' | 'ram_rom' | 'condition' | 'policy';
   value: string;
   colorCode?: string;
 }
@@ -177,12 +177,14 @@ export default function AdminPage() {
   const [availableTags, setAvailableTags] = useState<VariantTag[]>([]);
   const [variantSpecs, setVariantSpecs] = useState<VariantSpec[]>([]);
   const [selectedVariantIdx, setSelectedVariantIdx] = useState<number>(0);
-  const [newTagType, setNewTagType] = useState<'color' | 'ram_rom' | 'condition'>('color');
+  const [newTagType, setNewTagType] = useState<'color' | 'ram_rom' | 'condition' | 'policy'>('color');
   const [newConditionVal, setNewConditionVal] = useState('');
   const [newColorName, setNewColorName] = useState('');
   const [newColorCode, setNewColorCode] = useState('#2563eb');
   const [newRamVal, setNewRamVal] = useState('');
   const [newRomVal, setNewRomVal] = useState('');
+  const [selectedPolicyTagIds, setSelectedPolicyTagIds] = useState<string[]>([]);
+  const [newPolicyVal, setNewPolicyVal] = useState('');
 
   // Trợ lý AI Admin State
   const [adminChatMessages, setAdminChatMessages] = useState<any[]>([
@@ -642,6 +644,13 @@ export default function AdminPage() {
     // Lưu trữ nguyên vẹn Kho thẻ thuộc tính (Tags Pool) của sản phẩm
     specsObject.available_tags = availableTags;
 
+    // Lưu danh sách chính sách bảo hành & ưu đãi được gán
+    const policyTags = selectedPolicyTagIds
+      .map(id => availableTags.find(t => t.id === id))
+      .filter(Boolean)
+      .map(t => t!.value);
+    specsObject.policy_tags = policyTags;
+
     // Đóng gói Variants từ variantSpecs và availableTags
     const variantsList: any[] = [];
     variantSpecs.forEach(vs => {
@@ -776,6 +785,8 @@ export default function AdminPage() {
     setNewColorCode('#2563eb');
     setNewRamVal('');
     setNewRomVal('');
+    setSelectedPolicyTagIds([]);
+    setNewPolicyVal('');
     setModalOpen(true);
   };
 
@@ -811,6 +822,24 @@ export default function AdminPage() {
         });
       });
     }
+
+    // Parse các chính sách bảo hành & ưu đãi từ specs.policy_tags
+    const dbPolicies: string[] = (p.specs as any)?.policy_tags || [];
+    const policyIds: string[] = [];
+    dbPolicies.forEach(policyText => {
+      let matchedTag = parsedTags.find(t => t.type === 'policy' && t.value.toLowerCase() === policyText.toLowerCase());
+      if (!matchedTag) {
+        const tagId = `policy-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+        matchedTag = {
+          id: tagId,
+          type: 'policy',
+          value: policyText
+        };
+        parsedTags.push(matchedTag);
+      }
+      policyIds.push(matchedTag.id);
+    });
+    setSelectedPolicyTagIds(policyIds);
 
     // Parse variants từ DB
     const dbVariants = (p.specs as any)?.variants || [];
@@ -886,9 +915,10 @@ export default function AdminPage() {
     setNewColorCode('#2563eb');
     setNewRamVal('');
     setNewRomVal('');
+    setNewPolicyVal('');
 
-    // Parse specs object sang key-value (lọc bỏ các key nội bộ)
-    const INTERNAL_KEYS = new Set(['original_link','ratings_count','color_options','color_images','variants','ram','storage']);
+    // Parse specs object sang key-value (lọc bỏ các key nội bộ và tag nội bộ)
+    const INTERNAL_KEYS = new Set(['original_link','ratings_count','color_options','color_images','variants','ram','storage','available_tags','availableTags','policy_tags','policyTags']);
     const rows: SpecRow[] = Object.entries(p.specs || {})
       .filter(([key]) => !INTERNAL_KEYS.has(key))
       .map(([key, value]) => ({ key, value: String(value) }));
@@ -2887,8 +2917,184 @@ export default function AdminPage() {
                                     </div>
                                   </div>
                                 )}
+
                               </>
                             )}
+                          </div>
+                        </div>
+
+                        {/* KHO THẺ CHÍNH SÁCH (POLICY POOL) - TÁCH RIÊNG BIỆT */}
+                        <div className="space-y-3 border-t border-border pt-3 text-xs">
+                          <div className="flex justify-between items-center">
+                            <label className="text-[11px] font-bold text-muted-foreground flex items-center gap-1.5">
+                              <span>🛡️ Kho thẻ chính sách (Policy Pool)</span>
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const samples = [
+                                  'Chính hãng 100%',
+                                  'Giao nhanh toàn quốc',
+                                  'Lỗi 1 đổi 1',
+                                  'Bảo hành 12 tháng',
+                                  'Lỗi 1 đổi 1 trong 30 ngày',
+                                  'Giao nhanh 2h',
+                                  'Bảo hành 24 tháng',
+                                  'Hoàn tiền 111% nếu giả'
+                                ];
+                                const newTags = [...availableTags];
+                                samples.forEach(s => {
+                                  if (!newTags.some(t => t.type === 'policy' && t.value.toLowerCase() === s.toLowerCase())) {
+                                    newTags.push({
+                                      id: `policy-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                                      type: 'policy',
+                                      value: s
+                                    });
+                                  }
+                                });
+                                setAvailableTags(newTags);
+                              }}
+                              className="text-[9px] font-bold text-primary hover:underline px-1.5 py-0.5 bg-primary/10 rounded cursor-pointer"
+                            >
+                              + Thêm nhanh chính sách mẫu
+                            </button>
+                          </div>
+
+                          <div className="bg-muted/30 p-2.5 rounded-xl border border-border/40 space-y-2">
+                            <div className="flex gap-1.5 items-center">
+                              <input
+                                type="text"
+                                placeholder="Chính sách bảo hành/ưu đãi tự nhập..."
+                                value={newPolicyVal}
+                                onChange={(e) => setNewPolicyVal(e.target.value)}
+                                className="flex-1 h-8 px-2 rounded-lg border border-border bg-background text-foreground text-xs focus:outline-none focus:border-primary"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (newPolicyVal.trim()) {
+                                    const id = `policy-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+                                    if (!availableTags.some(t => t.type === 'policy' && t.value.toLowerCase() === newPolicyVal.trim().toLowerCase())) {
+                                      setAvailableTags([...availableTags, { id, type: 'policy', value: newPolicyVal.trim() }]);
+                                    }
+                                    setNewPolicyVal('');
+                                  }
+                                }}
+                                className="px-2.5 h-8 bg-primary hover:opacity-90 text-primary-foreground text-xs font-bold rounded-lg cursor-pointer"
+                              >
+                                Tạo thẻ
+                              </button>
+                            </div>
+
+                            {/* Danh sách thẻ chính sách trong kho */}
+                            {availableTags.some(t => t.type === 'policy') && (
+                              <div className="space-y-1.5 pt-1">
+                                <span className="text-[9px] font-bold text-muted-foreground block">Các thẻ chính sách có sẵn (Kéo thả hoặc chọn bên dưới):</span>
+                                <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto pr-1 custom-scroll">
+                                  {availableTags.filter(t => t.type === 'policy').map((tag) => (
+                                    <div
+                                      key={tag.id}
+                                      draggable
+                                      onDragStart={(e) => {
+                                        e.dataTransfer.setData('text/plain', tag.id);
+                                      }}
+                                      className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] rounded border border-emerald-500/20 font-bold select-none cursor-grab active:cursor-grabbing hover:bg-emerald-500/25 transition-colors"
+                                      title="Kéo thả thẻ này vào ô chính sách sản phẩm bên dưới"
+                                    >
+                                      <span>{tag.value}</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setAvailableTags(availableTags.filter(t => t.id !== tag.id));
+                                          setSelectedPolicyTagIds(selectedPolicyTagIds.filter(id => id !== tag.id));
+                                        }}
+                                        className="text-emerald-600 dark:text-emerald-400 hover:text-destructive font-bold text-[8px] ml-1"
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* CHÍNH SÁCH BẢO HÀNH & ƯU ĐÃI (GÁN CHO SẢN PHẨM) */}
+                        <div className="space-y-2 border-t border-border pt-3 text-xs">
+                          <div className="flex justify-between items-center">
+                            <label className="text-[11px] font-bold text-muted-foreground flex items-center gap-1">
+                              <span>🛡️ Chính sách bảo hành & Ưu đãi của sản phẩm (Tối đa 3)</span>
+                            </label>
+                          </div>
+                          <div
+                            onDragOver={(e) => e.preventDefault()}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              const tagId = e.dataTransfer.getData('text');
+                              if (tagId) {
+                                const tag = availableTags.find(t => t.id === tagId);
+                                if (tag && tag.type === 'policy' && !selectedPolicyTagIds.includes(tagId)) {
+                                  if (selectedPolicyTagIds.length >= 3) {
+                                    alert('Chỉ được chọn tối đa 3 chính sách để hiển thị đẹp mắt ở trang chi tiết sản phẩm.');
+                                    return;
+                                  }
+                                  setSelectedPolicyTagIds([...selectedPolicyTagIds, tagId]);
+                                }
+                              }
+                            }}
+                            className="border border-dashed border-border rounded-xl p-2.5 min-h-12 bg-background flex flex-wrap gap-1.5 items-center relative group"
+                          >
+                            {selectedPolicyTagIds.length === 0 ? (
+                              <span className="text-[10px] text-muted-foreground/60 italic w-full text-center py-1.5 pointer-events-none">
+                                Kéo thả tag chính sách vào đây hoặc chọn nhanh →
+                              </span>
+                            ) : (
+                              selectedPolicyTagIds.map(tid => {
+                                const tag = availableTags.find(t => t.id === tid);
+                                if (!tag) return null;
+                                return (
+                                  <span
+                                    key={tid}
+                                    className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[10px] rounded font-bold animate-in fade-in zoom-in-95 duration-100"
+                                  >
+                                    <span>{tag.value}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedPolicyTagIds(selectedPolicyTagIds.filter(id => id !== tid));
+                                      }}
+                                      className="text-emerald-500 hover:text-destructive font-bold text-[8px] ml-1"
+                                    >
+                                      ✕
+                                    </button>
+                                  </span>
+                                );
+                              })
+                            )}
+
+                            {/* Dropdown chọn nhanh tag chính sách */}
+                            <div className="absolute right-2 top-2.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <select
+                                value=""
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val && !selectedPolicyTagIds.includes(val)) {
+                                    if (selectedPolicyTagIds.length >= 3) {
+                                      alert('Chỉ được chọn tối đa 3 chính sách.');
+                                      return;
+                                    }
+                                    setSelectedPolicyTagIds([...selectedPolicyTagIds, val]);
+                                  }
+                                }}
+                                className="bg-card border border-border rounded px-1.5 py-0.5 text-[9px] cursor-pointer text-muted-foreground focus:outline-none focus:border-primary"
+                              >
+                                <option value="">+ Chọn nhanh</option>
+                                {availableTags.filter(t => t.type === 'policy' && !selectedPolicyTagIds.includes(t.id)).map(t => (
+                                  <option key={t.id} value={t.id}>{t.value}</option>
+                                ))}
+                              </select>
+                            </div>
                           </div>
                         </div>
 
