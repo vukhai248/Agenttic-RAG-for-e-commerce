@@ -260,6 +260,36 @@ const MEGA_MENU_DATA: MegaMenuData = {
         ]
       }
     ]
+  },
+  tv: {
+    columns: [
+      {
+        title: 'Thương hiệu Tivi',
+        items: [
+          { label: 'Samsung Smart TV', href: '/products?category=tv&brand=Samsung' },
+          { label: 'Sony Bravia 4K', href: '/products?category=tv&brand=Sony' },
+          { label: 'LG OLED Smart TV', href: '/products?category=tv&brand=LG' },
+          { label: 'Xiaomi TV', href: '/products?category=tv&brand=Xiaomi' },
+          { label: 'TCL Smart TV', href: '/products?category=tv&brand=TCL' }
+        ]
+      },
+      {
+        title: 'Chọn theo mức giá',
+        items: [
+          { label: 'Dưới 15 triệu', href: '/products?category=tv&max=15000000' },
+          { label: 'Từ 15 triệu - 40 triệu', href: '/products?category=tv&min=15000000&max=40000000' },
+          { label: 'Trên 40 triệu', href: '/products?category=tv&min=40000000' }
+        ]
+      },
+      {
+        title: 'Tivi HOT 🔥',
+        items: [
+          { label: 'LG OLED evo C4 65"', href: '/products', badge: 'OLED' },
+          { label: 'Samsung Neo QLED 8K', href: '/products', badge: 'Cao cấp' },
+          { label: 'Sony Bravia XR OLED', href: '/products', badge: 'Best' }
+        ]
+      }
+    ]
   }
 };
 
@@ -388,7 +418,7 @@ export default function HomePage() {
                 const Icon = item.icon;
                 const isHovered = hoveredCategory === item.slug;
                 
-                const targetHref = ['pc', 'tv', 'trade-in', 'used-items', 'promo'].includes(item.slug)
+                const targetHref = ['pc', 'trade-in', 'used-items', 'promo'].includes(item.slug)
                   ? '/products'
                   : `/products?category=${item.slug}`;
 

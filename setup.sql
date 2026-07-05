@@ -11,10 +11,12 @@ DROP TABLE IF EXISTS products CASCADE;
 -- 1. Bảng products
 CREATE TABLE products (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    category VARCHAR(50) NOT NULL CHECK (category IN ('laptop', 'phone', 'smartwatch', 'earphone', 'accessory')),
+    category VARCHAR(50) NOT NULL CHECK (category IN ('laptop', 'phone', 'smartwatch', 'earphone', 'accessory', 'tv')),
     brand VARCHAR(100) NOT NULL,
     name VARCHAR(255) NOT NULL,
     price NUMERIC(12, 2) NOT NULL CHECK (price >= 0),
+    original_price NUMERIC(12, 2) DEFAULT 0,
+    discount NUMERIC(5, 2) DEFAULT 0 CHECK (discount >= 0 AND discount <= 100),
     stock INTEGER NOT NULL DEFAULT 0 CHECK (stock >= 0),
     description TEXT NOT NULL,
     specs JSONB NOT NULL,

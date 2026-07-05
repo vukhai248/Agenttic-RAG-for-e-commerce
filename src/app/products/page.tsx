@@ -32,13 +32,14 @@ const FALLBACK_ALL_PRODUCTS = [
   { id: 'prod-17', category: 'accessory', brand: 'Logitech', name: 'Chuột Logitech MX Master 3S', price: 2490000, stock: 20, description: 'Chuột không dây công thái học, cuộn từ tính MagSpeed và cảm biến di chuyển trên mọi bề mặt.', specs: { type: 'Chuột không dây', color: 'Đen' }, images: ['https://images.unsplash.com/photo-1615663245857-ac93bb7c39e7?w=600'], rating_avg: 4.9 }
 ];
 
-const MAX_PRICE_LIMIT = 60000000;
+const MAX_PRICE_LIMIT = 200000000;
 
 const CATEGORY_LABELS: Record<string, string> = {
   'phone': 'Điện thoại',
   'laptop': 'Laptop',
-  'smartwatch': 'Đồng hồ',
+  'tv': 'Tivi',
   'earphone': 'Tai nghe',
+  'smartwatch': 'Đồng hồ',
   'accessory': 'Phụ kiện'
 };
 
@@ -79,7 +80,7 @@ function ProductsContent() {
         return;
       }
       try {
-        const { data, error } = await supabase.from('products').select('*');
+        const { data, error } = await supabase.from('products').select('id,category,brand,name,price,original_price,discount,stock,description,specs,images,rating_avg,created_at');
         if (error) throw error;
         setProducts(data || []);
       } catch (err) {
@@ -608,12 +609,19 @@ function ProductsContent() {
                 <span className="absolute top-3 left-3 bg-card/90 backdrop-blur-sm border border-border text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded-md text-muted-foreground">
                   {prod.brand}
                 </span>
-                {prod.rating_avg && (
-                  <div className="absolute top-3 right-3 flex items-center gap-0.5 bg-black/60 backdrop-blur-sm border border-white/10 px-1.5 py-0.5 rounded-md text-[10px] font-black text-amber-400">
-                    <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                    <span>{prod.rating_avg.toFixed(1)}</span>
-                  </div>
-                )}
+                <div className="absolute top-3 right-3 flex flex-col items-end gap-1">
+                  {prod.rating_avg && (
+                    <div className="flex items-center gap-0.5 bg-black/60 backdrop-blur-sm border border-white/10 px-1.5 py-0.5 rounded-md text-[10px] font-black text-amber-400">
+                      <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                      <span>{prod.rating_avg.toFixed(1)}</span>
+                    </div>
+                  )}
+                  {prod.discount && prod.discount > 0 && (
+                    <span className="bg-red-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-md shadow-md">
+                      -{Math.round(prod.discount)}%
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Chi tiết */}
@@ -628,9 +636,16 @@ function ProductsContent() {
                   {prod.description}
                 </p>
                 <div className="flex items-center justify-between border-t border-border/60 pt-3 mt-1">
-                  <span className="text-xs sm:text-sm font-black text-foreground">
-                    {formatPrice(prod.price)}
-                  </span>
+                  <div className="flex flex-col">
+                    <span className="text-xs sm:text-sm font-black text-foreground">
+                      {formatPrice(prod.price)}
+                    </span>
+                    {prod.original_price && prod.original_price > prod.price && (
+                      <span className="text-[10px] text-muted-foreground line-through">
+                        {formatPrice(prod.original_price)}
+                      </span>
+                    )}
+                  </div>
                   <button
                     onClick={(e) => handleAddToCart(e, prod)}
                     className="flex items-center justify-center p-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground transition-all cursor-pointer shadow-md shadow-primary/10 hover:shadow-primary/25"

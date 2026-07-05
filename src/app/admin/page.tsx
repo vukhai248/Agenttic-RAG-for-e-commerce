@@ -66,6 +66,7 @@ const CATEGORIES = [
   { value: 'smartwatch', label: 'Đồng hồ' },
   { value: 'earphone', label: 'Tai nghe' },
   { value: 'accessory', label: 'Phụ kiện' },
+  { value: 'tv', label: 'Tivi' },
 ];
 
 const FALLBACK_PRODUCTS: Product[] = [

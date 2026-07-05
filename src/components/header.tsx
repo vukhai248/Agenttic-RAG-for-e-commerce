@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useCart } from '@/store/useCart';
 import { supabase } from '@/lib/supabase';
-import { ShoppingCart, User, Search, Laptop, Smartphone, Watch, Headphones, Layers, Sun, Moon, X } from 'lucide-react';
+import { ShoppingCart, User, Search, Laptop, Smartphone, Watch, Headphones, Layers, Sun, Moon, X, Tv } from 'lucide-react';
 
 interface Product {
   id: string;
@@ -402,6 +402,10 @@ export default function Header() {
             <Link href="/products?category=earphone" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors py-1.5 whitespace-nowrap">
               <Headphones className="w-3.5 h-3.5" />
               Tai nghe
+            </Link>
+            <Link href="/products?category=tv" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors py-1.5 whitespace-nowrap">
+              <Tv className="w-3.5 h-3.5" />
+              Tivi
             </Link>
             <Link href="/products?category=accessory" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors py-1.5 whitespace-nowrap">
               <Layers className="w-3.5 h-3.5" />
