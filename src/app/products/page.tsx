@@ -113,6 +113,32 @@ function ProductsContent() {
     setPriceRange({ min: minVal, max: maxVal });
   }, [minParam, maxParam]);
 
+  // Debounce cập nhật URL khi priceRange thay đổi (giúp kéo thanh trượt mượt mà không bị giật lag)
+  useEffect(() => {
+    const minVal = minParam ? Number(minParam) : 0;
+    const maxVal = maxParam ? Number(maxParam) : MAX_PRICE_LIMIT;
+    
+    const timer = setTimeout(() => {
+      if (priceRange.min !== minVal || priceRange.max !== maxVal) {
+        const params = new URLSearchParams(searchParams.toString());
+        if (priceRange.min > 0) {
+          params.set('min', priceRange.min.toString());
+        } else {
+          params.delete('min');
+        }
+        if (priceRange.max < MAX_PRICE_LIMIT) {
+          params.set('max', priceRange.max.toString());
+        } else {
+          params.delete('max');
+        }
+        // Dùng replace và scroll: false để mượt mà nhất, không tạo rác trong history stack
+        router.replace(`/products?${params.toString()}`, { scroll: false });
+      }
+    }, 400); // 400ms debounce
+
+    return () => clearTimeout(timer);
+  }, [priceRange.min, priceRange.max, minParam, maxParam, searchParams, router]);
+
   // 3. Đóng các dropdown khi click outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -209,18 +235,7 @@ function ProductsContent() {
   };
 
   const handlePriceChange = (min: number, max: number) => {
-    const params = new URLSearchParams(searchParams.toString());
-    if (min > 0) {
-      params.set('min', min.toString());
-    } else {
-      params.delete('min');
-    }
-    if (max < MAX_PRICE_LIMIT) {
-      params.set('max', max.toString());
-    } else {
-      params.delete('max');
-    }
-    router.push(`/products?${params.toString()}`);
+    setPriceRange({ min, max });
   };
 
   const handleCategoryChange = (cat: string) => {
