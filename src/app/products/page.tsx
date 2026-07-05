@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
@@ -33,7 +33,7 @@ const FALLBACK_ALL_PRODUCTS = [
   { id: 'prod-17', category: 'accessory', brand: 'Logitech', name: 'Chuột Logitech MX Master 3S', price: 2490000, stock: 20, description: 'Chuột không dây công thái học, cuộn từ tính MagSpeed và cảm biến di chuyển trên mọi bề mặt.', specs: { type: 'Chuột không dây', color: 'Đen' }, images: ['https://images.unsplash.com/photo-1615663245857-ac93bb7c39e7?w=600'], rating_avg: 4.9 }
 ];
 
-export default function ProductsPage() {
+function ProductsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -67,13 +67,11 @@ export default function ProductsPage() {
           .from('products')
           .select('*');
 
-        if (error || !data || data.length === 0) {
-          throw new Error('CSDL rỗng hoặc chưa cấu hình');
-        }
-        setProducts(data);
+        if (error) throw error;
+        setProducts(data || []);
       } catch (err) {
-        console.warn('Lỗi kết nối CSDL, dùng danh sách fallback:', err);
-        setProducts(FALLBACK_ALL_PRODUCTS);
+        console.warn('Lỗi kết nối CSDL:', err);
+        setProducts([]);
       } finally {
         setIsLoading(false);
       }
@@ -375,6 +373,21 @@ export default function ProductsPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function ProductsPage() {
+  return (
+    <Suspense fallback={
+      <div className="container mx-auto px-4 py-16 flex items-center justify-center flex-1">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm text-muted-foreground">Đang tải danh sách sản phẩm...</span>
+        </div>
+      </div>
+    }>
+      <ProductsContent />
+    </Suspense>
   );
 }
 

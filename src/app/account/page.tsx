@@ -3,35 +3,12 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { ShoppingBag, User, LogOut, Clock, ShieldCheck, MapPin, Lock, Loader2, CheckCircle2, AlertCircle, Save } from 'lucide-react';
+import { ShoppingBag, User, LogOut, Clock, ShieldCheck, MapPin, Lock, Loader2, CheckCircle2, AlertCircle, Save, HelpCircle, LayoutDashboard } from 'lucide-react';
 import Link from 'next/link';
 
-// Đơn hàng mock mẫu để chạy offline/test khi chưa có đơn thực tế trong DB
-const MOCK_ORDERS = [
-  {
-    id: 'ord_1',
-    created_at: '2026-07-04T08:30:00Z',
-    status: 'shipping',
-    total: 5690000,
-    shipping_address: 'Nguyễn Văn A - SĐT: 0987654321 - ĐC: 123 Đường Cầu Giấy, Cầu Giấy, Hà Nội',
-    items: [
-      { id: 'prod-13', name: 'Apple AirPods Pro Gen 2 USB-C', price: 5690000, quantity: 1, image: 'https://images.unsplash.com/photo-1588449668338-d134ae7f3639?w=600' }
-    ]
-  },
-  {
-    id: 'ord_2',
-    created_at: '2026-06-20T14:15:00Z',
-    status: 'delivered',
-    total: 28980000,
-    shipping_address: 'Nguyễn Văn A - SĐT: 0987654321 - ĐC: 123 Đường Cầu Giấy, Cầu Giấy, Hà Nội',
-    items: [
-      { id: 'prod-16', name: 'Sạc Anker Prime GaN 67W 3 Cổng', price: 990000, quantity: 1, image: 'https://images.unsplash.com/photo-1611532736597-de2d4265fba3?w=600' },
-      { id: 'prod-1', name: 'MacBook Air M3 13 inch', price: 27990000, quantity: 1, image: 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=600' }
-    ]
-  }
-];
+// Loại bỏ MOCK_ORDERS placeholder
 
-type TabKey = 'orders' | 'profile' | 'password';
+type TabKey = 'orders' | 'profile' | 'password' | 'support';
 
 export default function AccountPage() {
   const router = useRouter();
@@ -53,6 +30,43 @@ export default function AccountPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [passwordMsg, setPasswordMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Form gửi yêu cầu hỗ trợ (Khách hàng tạo)
+  const [supportCategory, setSupportCategory] = useState('advisory');
+  const [supportOrderId, setSupportOrderId] = useState('');
+  const [supportNote, setSupportNote] = useState('');
+  const [supportSaving, setSupportSaving] = useState(false);
+  const [supportMsg, setSupportMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const handleSendSupportTicket = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!supportNote.trim()) {
+      setSupportMsg({ type: 'error', text: 'Vui lòng nhập chi tiết nội dung yêu cầu hỗ trợ!' });
+      return;
+    }
+    setSupportSaving(true);
+    setSupportMsg(null);
+    try {
+      const { error } = await supabase.from('support_tickets').insert({
+        customer_id: user.id,
+        order_id: supportOrderId ? supportOrderId : null,
+        category: supportCategory,
+        risk_level: 'low',
+        created_by: 'customer',
+        status: 'open',
+        note: supportNote.trim(),
+      });
+      if (error) throw error;
+      setSupportMsg({ type: 'success', text: 'Gửi yêu cầu hỗ trợ thành công! Nhân viên sẽ phản hồi bạn sớm nhất.' });
+      setSupportNote('');
+      setSupportOrderId('');
+    } catch (err: any) {
+      console.error('Lỗi gửi support ticket:', err);
+      setSupportMsg({ type: 'error', text: err.message || 'Lỗi hệ thống, không thể gửi yêu cầu hỗ trợ.' });
+    } finally {
+      setSupportSaving(false);
+    }
+  };
 
   useEffect(() => {
     const fetchUserDataAndOrders = async () => {
@@ -77,7 +91,7 @@ export default function AccountPage() {
 
           if (error) throw error;
 
-          setOrders(orderData && orderData.length > 0 ? orderData : MOCK_ORDERS);
+          setOrders(orderData || []);
         } else {
           const isMockLogged = localStorage.getItem('mock_user_logged');
           if (isMockLogged === 'true') {
@@ -86,14 +100,14 @@ export default function AccountPage() {
               email: 'guest.developer@gmail.com',
               user_metadata: { full_name: 'Developer Guest', phone: '0900000000', address: '' },
             });
-            setOrders(MOCK_ORDERS);
+            setOrders([]);
           } else {
             router.push('/auth/login');
           }
         }
       } catch (err) {
-        console.warn('Lỗi kết nối hoặc tải đơn hàng, chuyển về dữ liệu mock:', err);
-        setOrders(MOCK_ORDERS);
+        console.warn('Lỗi kết nối hoặc tải đơn hàng:', err);
+        setOrders([]);
       } finally {
         setIsLoading(false);
       }
@@ -206,48 +220,92 @@ export default function AccountPage() {
     { key: 'orders', label: `Đơn hàng của tôi (${orders.length})` },
     { key: 'profile', label: 'Thông tin cá nhân' },
     { key: 'password', label: 'Đổi mật khẩu' },
+    { key: 'support', label: 'Gửi yêu cầu hỗ trợ' },
   ];
 
   return (
-    <div className="container mx-auto px-4 py-8 flex-1 space-y-8 transition-colors duration-200">
-      {/* Tiêu đề & thông tin cơ bản */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-border pb-6">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center font-bold text-primary-foreground text-lg shadow-md shadow-primary/20 uppercase">
+    <div className="container mx-auto px-4 py-8 flex flex-col md:flex-row gap-8 flex-1 transition-colors duration-200">
+      {/* 1. SIDEBAR DỌC BÊN TRÁI */}
+      <aside className="w-full md:w-64 flex-shrink-0 flex flex-col gap-6">
+        {/* Info card */}
+        <div className="rounded-2xl border border-border bg-card/45 p-5 flex items-center gap-4 shadow-sm">
+          <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center font-bold text-primary-foreground text-lg shadow-md shadow-primary/20 uppercase flex-shrink-0">
             {user.email?.substring(0, 2)}
           </div>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-extrabold text-foreground">
+          <div className="overflow-hidden">
+            <h2 className="text-sm font-extrabold text-foreground truncate">
               {user.user_metadata?.full_name || user.email?.split('@')[0]}
-            </h1>
-            <span className="text-xs text-muted-foreground block">{user.email}</span>
+            </h2>
+            <span className="text-[10px] text-muted-foreground block truncate">{user.email}</span>
           </div>
         </div>
-        <button
-          onClick={handleLogout}
-          className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-destructive border border-destructive/20 hover:border-destructive/40 bg-destructive/5 hover:bg-destructive/10 rounded-xl transition-all cursor-pointer"
-        >
-          <LogOut className="w-4 h-4" />
-          <span>Đăng xuất</span>
-        </button>
-      </div>
 
-      {/* Tabs */}
-      <div className="flex gap-4 border-b border-border overflow-x-auto no-scrollbar">
-        {tabs.map((tab) => (
+        {/* Navigation menu */}
+        <nav className="rounded-2xl border border-border bg-card/35 p-3 flex flex-row md:flex-col gap-1 overflow-x-auto no-scrollbar md:overflow-visible">
+          {tabs.map((tab) => {
+            const Icon = tab.key === 'orders' ? ShoppingBag 
+                         : tab.key === 'profile' ? User 
+                         : tab.key === 'password' ? Lock 
+                         : HelpCircle;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex-1 md:flex-initial ${
+                  activeTab === tab.key
+                    ? 'bg-primary text-primary-foreground shadow-md shadow-primary/15'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Logout & Home links (Desktop only) */}
+        <div className="hidden md:flex flex-col gap-3 px-3">
+          {/* Chỉ hiển thị link Admin nếu có quyền */}
+          {user && (user.user_metadata?.role === 'admin' ||
+            user.email === 'admin@gmail.com' ||
+            user.email === 'vugiakhai2004@gmail.com' ||
+            user.email?.toLowerCase().includes('admin')) && (
+            <Link
+              href="/admin"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-primary border border-primary/20 hover:border-primary/45 bg-primary/5 hover:bg-primary/10 rounded-xl transition-all cursor-pointer"
+            >
+              <LayoutDashboard className="w-4 h-4" />
+              <span>Vào Trang Quản Trị</span>
+            </Link>
+          )}
+
           <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={`pb-3 text-sm font-semibold border-b-2 px-1 whitespace-nowrap transition-all cursor-pointer ${
-              activeTab === tab.key
-                ? 'border-primary text-foreground'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-            }`}
+            onClick={handleLogout}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-destructive border border-destructive/20 hover:border-destructive/40 bg-destructive/5 hover:bg-destructive/10 rounded-xl transition-all cursor-pointer"
           >
-            {tab.label}
+            <LogOut className="w-4 h-4" />
+            <span>Đăng xuất tài khoản</span>
           </button>
-        ))}
-      </div>
+          <div className="text-center">
+            <Link href="/" className="text-xs text-primary hover:underline font-semibold">
+              ← Quay lại mua sắm
+            </Link>
+          </div>
+        </div>
+      </aside>
+
+      {/* 2. NỘI DUNG HIỂN THỊ BÊN PHẢI */}
+      <main className="flex-1 space-y-6 overflow-hidden">
+        {/* Tiêu đề Panel hiện tại */}
+        <div className="border-b border-border pb-4 hidden md:block">
+          <h1 className="text-sm font-extrabold text-foreground uppercase tracking-wider">
+            {activeTab === 'orders' ? 'Lịch sử đơn hàng' 
+             : activeTab === 'profile' ? 'Thông tin cá nhân' 
+             : activeTab === 'password' ? 'Bảo mật tài khoản' 
+             : 'Hỗ trợ kỹ thuật & dịch vụ'}
+          </h1>
+        </div>
 
       {/* TAB: ĐƠN HÀNG */}
       {activeTab === 'orders' && (
@@ -268,7 +326,7 @@ export default function AccountPage() {
                     <div className="space-y-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-xs font-semibold text-muted-foreground">Mã đơn hàng:</span>
-                        <span className="text-xs font-mono font-bold text-foreground bg-background px-2 py-0.5 rounded border border-border truncate max-w-[200px]">{order.id}</span>
+                        <span className="text-xs font-mono font-bold text-foreground bg-background px-2 py-0.5 rounded border border-border break-all">{order.id}</span>
                       </div>
                       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                         <Clock className="w-3.5 h-3.5 text-primary" />
@@ -436,6 +494,80 @@ export default function AccountPage() {
           </button>
         </form>
       )}
+
+      {/* TAB: GỬI YÊU CẦU HỖ TRỢ */}
+      {activeTab === 'support' && (
+        <form onSubmit={handleSendSupportTicket} className="max-w-xl rounded-2xl border border-border bg-card/40 p-6 space-y-6">
+          <h2 className="text-lg font-bold text-foreground flex items-center gap-2 border-b border-border pb-3">
+            <HelpCircle className="w-5 h-5 text-primary" />
+            <span>Gửi yêu cầu hỗ trợ trực tiếp</span>
+          </h2>
+
+          {supportMsg && (
+            <div className={`p-3.5 rounded-xl border text-xs flex items-center gap-2.5 ${
+              supportMsg.type === 'success'
+                ? 'border-success/20 bg-success/5 text-success'
+                : 'border-destructive/20 bg-destructive/5 text-destructive'
+            }`}>
+              {supportMsg.type === 'success' ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <AlertCircle className="w-4 h-4 flex-shrink-0" />}
+              <span>{supportMsg.text}</span>
+            </div>
+          )}
+
+          <div className="space-y-4 text-sm">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground">Danh mục hỗ trợ</label>
+              <select
+                value={supportCategory}
+                onChange={(e) => setSupportCategory(e.target.value)}
+                className="w-full h-11 px-4 rounded-xl border border-border bg-background text-foreground text-sm focus:outline-none focus:border-primary cursor-pointer transition-colors"
+              >
+                <option value="advisory">Tư vấn mua hàng / Thông số kỹ thuật</option>
+                <option value="negotiation">Đàm phán giá / Khuyến mãi</option>
+                <option value="technical">Hỗ trợ kỹ thuật sản phẩm</option>
+                <option value="other">Ý kiến khác / Góp ý</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground">Đơn hàng liên quan (Không bắt buộc)</label>
+              <select
+                value={supportOrderId}
+                onChange={(e) => setSupportOrderId(e.target.value)}
+                className="w-full h-11 px-4 rounded-xl border border-border bg-background text-foreground text-sm focus:outline-none focus:border-primary cursor-pointer transition-colors"
+              >
+                <option value="">-- Không liên quan đến đơn hàng nào --</option>
+                {orders.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    Đơn hàng #{o.id.substring(0, 8)}... ({formatPrice(o.total)})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground">Mô tả chi tiết sự cố / Yêu cầu</label>
+              <textarea
+                rows={4}
+                placeholder="Vui lòng mô tả chi tiết vấn đề bạn đang gặp phải hoặc thông tin cần tư vấn để chúng tôi hỗ trợ nhanh nhất..."
+                value={supportNote}
+                onChange={(e) => setSupportNote(e.target.value)}
+                className="w-full p-4 rounded-xl border border-border bg-background text-foreground placeholder-muted-foreground/60 text-sm focus:outline-none focus:border-primary resize-none transition-colors"
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={supportSaving}
+            className="flex items-center justify-center gap-2 h-11 px-6 rounded-xl bg-primary hover:opacity-90 disabled:opacity-50 text-primary-foreground text-sm font-bold shadow-md shadow-primary/15 active:scale-[0.98] transition-all cursor-pointer"
+          >
+            {supportSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <HelpCircle className="w-4 h-4" />}
+            <span>Gửi yêu cầu</span>
+          </button>
+        </form>
+      )}
+      </main>
     </div>
   );
 }

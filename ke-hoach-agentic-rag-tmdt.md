@@ -19,20 +19,32 @@
             │                        └─────────────┬─────────────┘
             │ REST API                              │
             ▼                                       ▼
-┌─────────────────────────┐         ┌──────────────────────────┐
-│   SUPABASE               │         │   VECTOR DB (Chroma)      │
-│   - Postgres (sản phẩm,  │◄────────│   - Embedding mô tả SP    │
-│     đơn hàng, user)      │  query  │   - Embedding tài liệu    │
-│   - Auth (email + Google)│  order  │     chính sách/FAQ        │
-│   - Storage (ảnh SP)     │         └──────────────────────────┘
-└──────────────────────────┘
+┌───────────────────────────────────────────────────────────────────┐
+│                  SUPABASE (Postgres + pgvector)                    │
+│  - Bảng quan hệ: products, orders, reviews, support_tickets,      │
+│    chat_logs → tra cứu chính xác (query SQL trực tiếp, KHÔNG qua  │
+│    vector search — đơn hàng, tồn kho, giá...)                     │
+│  - Cột `embedding` (pgvector) trong products/policy_chunks →      │
+│    tìm kiếm ngữ nghĩa (cùng 1 DB, không cần pipeline đồng bộ)     │
+│  - Auth (email + Google), Storage (ảnh sản phẩm)                  │
+└───────────────────────────────────────────────────────────────────┘
+
+(*) Tuỳ chọn benchmark (mục 3.2): có thể thêm Vector DB riêng (Chroma/
+    FAISS) chạy song song để so sánh hiệu năng/độ chính xác. Khi đó
+    Postgres là nguồn gốc (source of truth), Chroma/FAISS là bản sao —
+    cần 1 script đồng bộ (không cần real-time, chạy lại khi đổi dữ
+    liệu sản phẩm là đủ cho quy mô đồ án).
 ```
 
 **Vì sao tách như vậy:**
 - Next.js + Supabase là bộ đôi cực kỳ dễ vibe-code (hầu hết tool AI coding đều được huấn luyện nhiều nhất trên stack này, tài liệu/ví dụ rất nhiều).
 - Supabase gánh toàn bộ phần "khó nhằn" của web mà bạn không chuyên: đăng nhập, đăng nhập Google, database quan hệ, lưu ảnh — bạn gần như không cần viết backend thủ công cho phần TMĐT.
 - Agentic RAG là 1 service Python độc lập (FastAPI), giao tiếp với web qua 1 API endpoint duy nhất (`/chat`) — tách biệt hoàn toàn, dễ phát triển/test độc lập, không phụ thuộc vào việc web có sửa đổi hay không.
-- Vector DB (Chroma) tách riêng khỏi Postgres vì đây là phần bạn tự quản lý bằng Python thuần, không cần biết SQL nâng cao.
+- **Nguyên tắc định tuyến dữ liệu (quan trọng)**: không phải mọi truy vấn đều cần vector DB — phân loại theo loại truy vấn trước:
+  - **Tra cứu chính xác** (đơn hàng, tồn kho, giá, xác thực user) → query SQL trực tiếp vào Supabase Postgres, **bỏ qua vector search hoàn toàn**.
+  - **Tìm kiếm ngữ nghĩa** (mô tả sản phẩm, chính sách) → cần vector search.
+- **Mặc định dùng `pgvector`** (extension vector ngay trong Supabase Postgres) thay vì Chroma/FAISS riêng — vì embedding nằm cùng bảng với dữ liệu gốc nên **không tồn tại vấn đề đồng bộ**, đồng thời cho phép viết 1 câu SQL vừa lọc cứng (giá, danh mục) vừa tìm ngữ nghĩa cùng lúc (chính là Hybrid Retrieval ở mục 3.3). Đây là lựa chọn an toàn nhất cho 1 người làm, ít thời gian, không rành devops.
+- Chroma/FAISS riêng chỉ nên dùng nếu đề tài cần **benchmark so sánh nhiều loại vector store** (mục 3.2) — không phải yêu cầu bắt buộc.
 
 ---
 
@@ -128,6 +140,7 @@ Yêu cầu AI coding tool tạo bảng `products` trong Supabase với các trư
 | specs | jsonb | thông số kỹ thuật dạng key-value, linh hoạt theo từng loại sản phẩm |
 | images | text[] | danh sách URL ảnh |
 | rating_avg | numeric | điểm đánh giá trung bình |
+| embedding | vector(768) | **(mặc định dùng pgvector)** embedding của `description`, dùng cho tìm kiếm ngữ nghĩa — nằm ngay trong bảng để tránh phải đồng bộ sang DB khác |
 | created_at | timestamp | |
 
 Gợi ý cấu trúc `specs` (jsonb) theo từng danh mục — cần thống nhất từ đầu để RAG so sánh sản phẩm dễ dàng:
@@ -146,17 +159,20 @@ Gợi ý cấu trúc `specs` (jsonb) theo từng danh mục — cần thống nh
 {"battery_life": "18 giờ", "display": "AMOLED 1.5 inch", "waterproof": "5ATM", "compatible": "iOS/Android"}
 ```
 
-Ngoài `products`, cần thêm 4 bảng phục vụ RAG:
+Ngoài `products`, cần thêm 5 bảng phục vụ RAG:
 - `orders` (id, user_id, status, items, total, created_at, shipping_address)
 - `reviews` (id, product_id, user_id, rating, comment, created_at)
 - `support_tickets` (id, customer_id, order_id nullable, category [advisory/negotiation/technical/attack_flagged/other], risk_level [low/medium/high], created_by [agent/staff/customer], status [open/in_progress/resolved], assigned_staff_id nullable, note, created_at) — phục vụ cơ chế phân quyền rủi ro ở mục 2.7
 - `chat_logs` (id, session_id, user_id nullable, role [user/agent/tool/system], message, tool_used nullable, risk_level nullable, created_at) — lưu toàn bộ hội thoại phục vụ audit/truy vết (mục 2.10)
+- `policy_chunks` (id, source_doc, chunk_index, content, embedding vector(768), created_at) — lưu các đoạn (chunk) tài liệu chính sách đã embedding, dùng cho `policy_rag_tool`
+
+> **Ghi chú kỹ thuật**: bật extension `pgvector` trong Supabase (Dashboard → Database → Extensions → `vector`), sau đó tạo index (`CREATE INDEX ... USING hnsw (embedding vector_cosine_ops)`) trên cả 2 cột `products.embedding` và `policy_chunks.embedding` để truy vấn nhanh. Nhờ vậy 1 câu SQL có thể vừa `WHERE price < X AND category = 'laptop'` vừa `ORDER BY embedding <-> query_embedding` cùng lúc — không cần gọi sang hệ thống khác.
 
 ### 1.4 Timeline vibe code phần Web (đề xuất: 7–9 ngày, làm trong Tuần 1)
 
 | Ngày | Việc |
 |---|---|
-| 1 | Khởi tạo project Next.js + Supabase, thiết kế schema DB, seed 30–50 sản phẩm mẫu (dùng ChatGPT/Claude sinh dữ liệu giả cho nhanh) |
+| 1 | Khởi tạo project Next.js + Supabase, **bật extension `pgvector`**, thiết kế schema DB (gồm cột `embedding` trong `products`, bảng `policy_chunks`), seed 30–50 sản phẩm mẫu (dùng ChatGPT/Claude sinh dữ liệu giả cho nhanh) |
 | 2 | Trang chủ + Header/Footer + danh mục sản phẩm |
 | 3 | Trang danh sách sản phẩm + filter/sort + thanh tìm kiếm |
 | 4 | Trang chi tiết sản phẩm + đánh giá |
@@ -177,13 +193,13 @@ Ngoài `products`, cần thêm 4 bảng phục vụ RAG:
 
 | # | Tool | Mô tả | Nguồn dữ liệu |
 |---|---|---|---|
-| 1 | `product_search_tool` | Tìm sản phẩm theo mô tả tự nhiên ("laptop mỏng nhẹ pin trâu"), kết hợp semantic search (vector) + filter cứng (giá, danh mục, thương hiệu) | Vector DB (embedding mô tả sản phẩm) + Postgres (giá, tồn kho) |
+| 1 | `product_search_tool` | Tìm sản phẩm theo mô tả tự nhiên ("laptop mỏng nhẹ pin trâu"), kết hợp semantic search (vector) + filter cứng (giá, danh mục, thương hiệu) | Supabase Postgres — 1 câu SQL vừa `WHERE` (giá, danh mục) vừa `ORDER BY embedding <->` (pgvector, mục 1.3) |
 | 2 | `product_compare_tool` | Lấy thông số 2–3 sản phẩm được nêu tên, trình bày bảng so sánh, kèm nhận xét ("A pin tốt hơn nhưng B camera tốt hơn") | Postgres (`specs` jsonb) |
-| 3 | `order_lookup_tool` | Tra cứu trạng thái đơn hàng theo mã đơn hoặc theo tài khoản đang đăng nhập | Postgres (`orders`) — cần xác thực user trước khi trả dữ liệu |
-| 4 | `policy_rag_tool` | Trả lời câu hỏi về chính sách đổi trả/bảo hành/vận chuyển, có trích dẫn điều khoản | Vector DB (embedding các trang chính sách) |
-| 5 | `recommendation_tool` | Gợi ý sản phẩm theo ngân sách + nhu cầu sử dụng (học tập/gaming/chụp ảnh...) | Vector DB + Postgres, có thể kết hợp `reviews` để ưu tiên sản phẩm đánh giá cao |
+| 3 | `order_lookup_tool` | Tra cứu trạng thái đơn hàng theo mã đơn hoặc theo tài khoản đang đăng nhập | Postgres (`orders`) — tra cứu chính xác, **không qua vector search** — cần xác thực user trước khi trả dữ liệu |
+| 4 | `policy_rag_tool` | Trả lời câu hỏi về chính sách đổi trả/bảo hành/vận chuyển, có trích dẫn điều khoản | Postgres (`policy_chunks`, pgvector) |
+| 5 | `recommendation_tool` | Gợi ý sản phẩm theo ngân sách + nhu cầu sử dụng (học tập/gaming/chụp ảnh...) | Postgres (`products` + `reviews`), kết hợp lọc cứng và vector cùng lúc |
 | 6 | `escalate_tool` | Khi agent không xử lý được, gặp câu hỏi thuộc nhóm rủi ro tư vấn/tài chính (giá liên hệ, mặc cả, tư vấn chuyên sâu — xem mục 2.7), hoặc user muốn gặp người thật → tạo ticket gắn mức rủi ro, chuyển nhân viên | Postgres (`support_tickets`) |
-| 7 | `staff_assist_tool` | *(Dùng nội bộ, không public cho khách)* Đọc hóa đơn/đơn hàng liên quan ticket, tra lịch sử đơn hàng khách, đối chiếu chính sách hoàn tiền, soạn nháp phản hồi cho nhân viên duyệt trước khi gửi khách — xem chi tiết luồng ở mục 2.7 | Postgres (`orders`, `support_tickets`) + Vector DB (chính sách) |
+| 7 | `staff_assist_tool` | *(Dùng nội bộ, không public cho khách)* Đọc hóa đơn/đơn hàng liên quan ticket, tra lịch sử đơn hàng khách, đối chiếu chính sách hoàn tiền, soạn nháp phản hồi cho nhân viên duyệt trước khi gửi khách — xem chi tiết luồng ở mục 2.7 | Postgres (`orders`, `support_tickets`, `policy_chunks`) |
 
 ### 2.3 Kiến trúc Agent (đề xuất)
 
@@ -194,9 +210,11 @@ Ngoài `products`, cần thêm 4 bảng phục vụ RAG:
 
 ### 2.4 Dữ liệu cần chuẩn bị riêng cho RAG
 
-1. **Product catalog embedding**: lấy trường `description` + `specs` từ Supabase, tạo embedding, lưu vào Chroma (kèm metadata: category, brand, price, product_id để filter cứng kết hợp semantic search).
-2. **Tài liệu chính sách**: tự viết 3–5 file (~1–2 trang mỗi file) cho: Chính sách đổi trả, Chính sách bảo hành, Chính sách vận chuyển, Câu hỏi thường gặp (FAQ). Chunk nhỏ (200–400 từ/chunk) rồi embedding vào Chroma riêng 1 collection.
-3. **Bộ câu hỏi test tự tạo** (30–50 câu, chia đều theo 6 tool ở trên) — dùng để đánh giá độ chính xác chọn tool + độ chính xác câu trả lời.
+1. **Product catalog embedding**: lấy trường `description` + `specs` từ Supabase, tạo embedding, lưu **ngay vào cột `embedding` của bảng `products`** (pgvector — mặc định, xem mục 1.3) kèm các cột có sẵn (category, brand, price) để filter cứng kết hợp semantic search trong cùng 1 câu SQL.
+2. **Tài liệu chính sách**: tự viết 3–5 file (~1–2 trang mỗi file) cho: Chính sách đổi trả, Chính sách bảo hành, Chính sách vận chuyển, Câu hỏi thường gặp (FAQ). Chunk nhỏ (200–400 từ/chunk) rồi embedding, lưu vào bảng `policy_chunks` (mục 1.3).
+3. **Bộ câu hỏi test tự tạo** (30–50 câu, chia đều theo 7 tool ở trên) — dùng để đánh giá độ chính xác chọn tool + độ chính xác câu trả lời.
+
+> Nếu có làm nhánh benchmark so sánh vector store (mục 3.2), lặp lại bước 1–2 để ghi thêm dữ liệu vào Chroma/FAISS — dùng 1 script đồng bộ đơn giản (đọc từ Postgres, embed, ghi qua), không cần cơ chế real-time.
 
 ### 2.5 API tích hợp với Web
 
@@ -297,6 +315,16 @@ So sánh recall@k trên bộ câu hỏi tìm sản phẩm:
 | `multilingual-e5-large` | Hỗ trợ tiếng Việt tốt, chạy local free (sentence-transformers) |
 | `BGE-M3` | Cạnh tranh trực tiếp, cũng chạy local free |
 | Google `text-embedding-004` (API) | So sánh model thương mại vs mã nguồn mở |
+
+**Nhánh mở rộng (tuỳ chọn, nếu còn thời gian): so sánh vector store backend**
+
+| Backend | Ưu điểm | Nhược điểm |
+|---|---|---|
+| **pgvector (Supabase Postgres)** — mặc định | Không cần đồng bộ (embedding nằm cùng bảng dữ liệu gốc), lọc cứng + vector search trong 1 câu SQL, không thêm hạ tầng | Tốc độ truy vấn với tập dữ liệu rất lớn (>1 triệu vector) kém hơn vector DB chuyên dụng — không phải vấn đề với quy mô 30–50 sản phẩm của đồ án |
+| **Chroma** | API Python đơn giản, dễ dùng khi prototype | Cần script đồng bộ riêng từ Postgres, thêm 1 thành phần hạ tầng phải quản lý |
+| **FAISS** | Tốc độ truy vấn rất nhanh (in-memory), phổ biến trong nghiên cứu | Không có filter theo metadata linh hoạt như SQL, cần tự quản lý persistence, cũng cần đồng bộ riêng |
+
+So sánh trên cùng bộ dữ liệu sản phẩm, đo: latency truy vấn, độ chính xác (recall@k phải giống nhau vì cùng embedding model), độ phức tạp triển khai — dùng làm nội dung phân tích cho báo cáo, giải thích rõ lý do chọn pgvector làm phương án chính.
 
 ### 3.3 Benchmark kiến trúc RAG (chi tiết theo từng biến thể)
 

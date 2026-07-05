@@ -13,13 +13,95 @@ export default function CheckoutPage() {
 
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
-  const [address, setAddress] = useState('');
+  const [province, setProvince] = useState('');
+  const [district, setDistrict] = useState('');
+  const [ward, setWard] = useState('');
+  const [detailAddress, setDetailAddress] = useState('');
+  const [note, setNote] = useState('');
+  const [saveAddress, setSaveAddress] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'cod'>('stripe');
+  
+  const [availableDistricts, setAvailableDistricts] = useState<string[]>([]);
+  const [availableWards, setAvailableWards] = useState<string[]>([]);
+  const [addressData, setAddressData] = useState<any[]>([]);
   
   const [user, setUser] = useState<any>(null);
   const [isLoadingUser, setIsLoadingUser] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Tải dữ liệu địa chính từ file JSON tĩnh và phục hồi thông tin đã lưu
+  useEffect(() => {
+    const loadAddressData = async () => {
+      try {
+        const res = await fetch('/data/vietnam-addresses.json');
+        if (!res.ok) throw new Error('Không thể tải file JSON địa chính');
+        const data = await res.json();
+        setAddressData(data);
+
+        // Phục hồi địa chỉ đã lưu sau khi dữ liệu địa chính đã sẵn sàng
+        const savedFullName = localStorage.getItem('saved_full_name');
+        const savedPhone = localStorage.getItem('saved_phone');
+        const savedProvince = localStorage.getItem('saved_province');
+        const savedDistrict = localStorage.getItem('saved_district');
+        const savedWard = localStorage.getItem('saved_ward');
+        const savedDetail = localStorage.getItem('saved_detail_address');
+        const savedSave = localStorage.getItem('saved_address_checkbox') === 'true';
+
+        if (savedFullName) setFullName(savedFullName);
+        if (savedPhone) setPhone(savedPhone);
+        if (savedSave) setSaveAddress(savedSave);
+
+        if (savedProvince) {
+          setProvince(savedProvince);
+          const foundProvince = data.find((p: any) => p.name === savedProvince);
+          if (foundProvince) {
+            setAvailableDistricts(foundProvince.districts.map((d: any) => d.name));
+            if (savedDistrict) {
+              setDistrict(savedDistrict);
+              const foundDistrict = foundProvince.districts.find((d: any) => d.name === savedDistrict);
+              if (foundDistrict) {
+                setAvailableWards(foundDistrict.wards);
+                if (savedWard) setWard(savedWard);
+              }
+            }
+          }
+        }
+        if (savedDetail) setDetailAddress(savedDetail);
+      } catch (err) {
+        console.error('Lỗi khi tải dữ liệu địa chính Việt Nam:', err);
+      }
+    };
+
+    loadAddressData();
+  }, []);
+
+  // Cập nhật khi chọn Tỉnh/Thành
+  const handleProvinceChange = (val: string) => {
+    setProvince(val);
+    setDistrict('');
+    setWard('');
+    setAvailableWards([]);
+    if (val) {
+      const foundProvince = addressData.find(p => p.name === val);
+      setAvailableDistricts(foundProvince ? foundProvince.districts.map((d: any) => d.name) : []);
+    } else {
+      setAvailableDistricts([]);
+    }
+  };
+
+  // Cập nhật khi chọn Quận/Huyện
+  const handleDistrictChange = (val: string) => {
+    setDistrict(val);
+    setWard('');
+    if (province && val) {
+      const foundProvince = addressData.find(p => p.name === province);
+      const foundDistrict = foundProvince?.districts.find((d: any) => d.name === val);
+      setAvailableWards(foundDistrict ? foundDistrict.wards : []);
+    } else {
+      setAvailableWards([]);
+    }
+  };
 
   useEffect(() => {
     const checkUser = async () => {
@@ -54,15 +136,51 @@ export default function CheckoutPage() {
 
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fullName.trim() || !phone.trim() || !address.trim()) {
-      setErrorMsg('Vui lòng điền đầy đủ thông tin giao hàng!');
+    if (!fullName.trim() || !phone.trim() || !province || !district || !ward || !detailAddress.trim()) {
+      setErrorMsg('Vui lòng chọn đầy đủ Tỉnh/Quận/Phường và điền Số nhà, tên đường!');
       return;
     }
+
+    // Kiểm tra định dạng số điện thoại Việt Nam cơ bản
+    const phoneRegex = /^(0|84)[3|5|7|8|9][0-9]{8}$/;
+    if (!phoneRegex.test(phone.trim())) {
+      setErrorMsg('Số điện thoại không hợp lệ! Vui lòng nhập số điện thoại Việt Nam (ví dụ: 0987654321).');
+      return;
+    }
+
+    // Chống spam địa chỉ quá ngắn
+    if (detailAddress.trim().length < 3) {
+      setErrorMsg('Số nhà, tên đường quá ngắn! Vui lòng nhập thông tin chi tiết để giao nhận chính xác.');
+      return;
+    }
+
     setErrorMsg('');
     setIsSubmitting(true);
 
     try {
-      const shippingAddressText = `${fullName} - SĐT: ${phone} - ĐC: ${address}`;
+      const fullAddress = `${detailAddress.trim()}, ${ward}, ${district}, ${province}`;
+      const noteText = note.trim() ? ` (Ghi chú: ${note.trim()})` : '';
+      const shippingAddressText = `${fullName.trim()} - SĐT: ${phone.trim()} - ĐC: ${fullAddress}${noteText}`;
+
+      // Xử lý lưu địa chỉ nếu check lưu
+      if (saveAddress) {
+        localStorage.setItem('saved_full_name', fullName.trim());
+        localStorage.setItem('saved_phone', phone.trim());
+        localStorage.setItem('saved_province', province);
+        localStorage.setItem('saved_district', district);
+        localStorage.setItem('saved_ward', ward);
+        localStorage.setItem('saved_detail_address', detailAddress.trim());
+        localStorage.setItem('saved_address_checkbox', 'true');
+      } else {
+        localStorage.removeItem('saved_full_name');
+        localStorage.removeItem('saved_phone');
+        localStorage.removeItem('saved_province');
+        localStorage.removeItem('saved_district');
+        localStorage.removeItem('saved_ward');
+        localStorage.removeItem('saved_detail_address');
+        localStorage.setItem('saved_address_checkbox', 'false');
+      }
+
       const targetUserId = user?.id || '00000000-0000-0000-0000-000000000000'; // Fallback guest ID
 
       if (paymentMethod === 'stripe') {
@@ -195,15 +313,92 @@ export default function CheckoutPage() {
               </div>
             </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground">Tỉnh / Thành phố</label>
+                <select
+                  required
+                  value={province}
+                  onChange={(e) => handleProvinceChange(e.target.value)}
+                  className="w-full h-11 px-3 rounded-xl border border-border bg-background text-foreground text-sm focus:outline-none focus:border-primary cursor-pointer"
+                >
+                  <option value="">Chọn tỉnh/thành phố</option>
+                  {addressData.map((p) => (
+                    <option key={p.name} value={p.name}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+              
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground">Quận / Huyện</label>
+                <select
+                  required
+                  disabled={!province}
+                  value={district}
+                  onChange={(e) => handleDistrictChange(e.target.value)}
+                  className="w-full h-11 px-3 rounded-xl border border-border bg-background text-foreground text-sm focus:outline-none focus:border-primary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <option value="">Chọn quận/huyện</option>
+                  {availableDistricts.map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+              
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground">Phường / Xã</label>
+                <select
+                  required
+                  disabled={!district}
+                  value={ward}
+                  onChange={(e) => setWard(e.target.value)}
+                  className="w-full h-11 px-3 rounded-xl border border-border bg-background text-foreground text-sm focus:outline-none focus:border-primary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <option value="">Chọn phường/xã</option>
+                  {availableWards.map((w) => (
+                    <option key={w} value={w}>{w}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-muted-foreground">Địa chỉ giao hàng chi tiết</label>
-              <textarea
+              <label className="text-xs font-semibold text-muted-foreground">
+                Số nhà, tên đường (Vui lòng chọn quận/huyện và phường/xã trước) <span className="text-destructive">*</span>
+              </label>
+              <input
+                type="text"
                 required
-                rows={3}
-                placeholder="Số nhà, ngõ hẻm, tên đường, phường/xã, quận/huyện, tỉnh/thành phố..."
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                className="w-full p-4 rounded-xl border border-border bg-background text-foreground placeholder-muted-foreground/60 text-sm focus:outline-none focus:border-primary resize-none"
+                disabled={!ward}
+                placeholder="Ví dụ: Số 123, ngõ 45, phố Trần Thái Tông"
+                value={detailAddress}
+                onChange={(e) => setDetailAddress(e.target.value)}
+                className="w-full h-11 px-4 rounded-xl border border-border bg-background text-foreground placeholder-muted-foreground/60 text-sm focus:outline-none focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+            </div>
+
+            {/* Checkbox lưu địa chỉ */}
+            <div className="flex items-center gap-2 pt-1">
+              <input
+                type="checkbox"
+                id="saveAddress"
+                checked={saveAddress}
+                onChange={(e) => setSaveAddress(e.target.checked)}
+                className="w-4 h-4 rounded border-border text-primary focus:ring-primary cursor-pointer"
+              />
+              <label htmlFor="saveAddress" className="text-xs text-muted-foreground cursor-pointer select-none">
+                Lưu địa chỉ cho lần mua kế tiếp
+              </label>
+            </div>
+
+            {/* Ghi chú khác nếu có */}
+            <div className="space-y-1.5 pt-2 border-t border-border/40">
+              <label className="text-xs font-semibold text-muted-foreground">Ghi chú khác (nếu có)</label>
+              <input
+                type="text"
+                placeholder="Ví dụ: Giao hàng giờ hành chính, gọi điện trước khi giao..."
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                className="w-full h-11 px-4 rounded-xl border border-border bg-background text-foreground placeholder-muted-foreground/60 text-sm focus:outline-none focus:border-primary"
               />
             </div>
           </div>

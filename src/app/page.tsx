@@ -114,19 +114,16 @@ export default function HomePage() {
         return;
       }
       try {
-        // Query ngẫu nhiên 8 sản phẩm từ bảng products
         const { data, error } = await supabase
           .from('products')
           .select('*')
           .limit(8);
 
-        if (error || !data || data.length === 0) {
-          throw new Error('Supabase trống hoặc chưa cấu hình');
-        }
-        setProducts(data);
+        if (error) throw error;
+        setProducts(data || []);
       } catch (err) {
-        console.warn('Lỗi kết nối CSDL, sử dụng dữ liệu tĩnh fallback:', err);
-        setProducts(FALLBACK_PRODUCTS);
+        console.warn('Lỗi kết nối CSDL:', err);
+        setProducts([]);
       } finally {
         setIsLoading(false);
       }

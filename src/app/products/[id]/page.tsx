@@ -4,23 +4,37 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useCart } from '@/store/useCart';
-import { Star, ShoppingCart, ShieldCheck, Truck, RefreshCw, ChevronLeft } from 'lucide-react';
+import { Star, ShoppingCart, ShieldCheck, Truck, RefreshCw, ChevronLeft, Cpu, HardDrive, Layers } from 'lucide-react';
 import Link from 'next/link';
 
-// Danh sách sản phẩm mock giống hệt để phục vụ chạy offline
-const FALLBACK_ALL_PRODUCTS = [
-  { id: 'prod-1', category: 'laptop', brand: 'Apple', name: 'MacBook Air M3 13 inch', price: 27990000, stock: 15, description: 'MacBook Air M3 phiên bản 2024 siêu mỏng nhẹ, hiệu năng cực đỉnh nhờ chip Apple M3 thế hệ mới. Thời lượng pin cực trâu lên tới 18 giờ liên tục, phù hợp cho học sinh, sinh viên và dân văn phòng cần di động cao.', specs: { "cpu": "Apple M3 8-Core", "ram": "8GB Unified Memory", "storage": "256GB SSD", "screen": "13.6 inch Liquid Retina (2560x1664)", "gpu": "8-Core GPU", "battery": "52.6Wh (lên đến 18 giờ)", "weight": "1.24kg" }, images: ['https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=600', 'https://images.unsplash.com/photo-1611186871348-b1ce696e52c9?w=600'], rating_avg: 4.8 },
-  { id: 'prod-2', category: 'laptop', brand: 'Apple', name: 'MacBook Pro M3 Pro 14 inch', price: 54990000, stock: 8, description: 'MacBook Pro 14 inch trang bị chip M3 Pro mạnh mẽ dành cho lập trình viên, designer chuyên nghiệp. Màn hình Liquid Retina XDR 120Hz sắc nét siêu sáng và đầy đủ các cổng kết nối HDMI, khe thẻ SDXC.', specs: { "cpu": "Apple M3 Pro 11-Core", "ram": "18GB Unified Memory", "storage": "512GB SSD", "screen": "14.2 inch Liquid Retina XDR (3024x1964)", "gpu": "14-Core GPU", "battery": "72.4Wh (lên đến 18 giờ)", "weight": "1.61kg" }, images: ['https://images.unsplash.com/photo-1611186871348-b1ce696e52c9?w=600', 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=600'], rating_avg: 4.9 },
-  { id: 'prod-3', category: 'laptop', brand: 'Dell', name: 'Dell XPS 13 Plus 9320', price: 42500000, stock: 5, description: 'Dell XPS 13 Plus sở hữu thiết kế đột phá với thanh Touch Bar ẩn, bàn phím tràn viền vô cực và touchpad tàng hình. CPU Intel Core i7 thế hệ 13 mạnh mẽ đáp ứng mượt mà mọi tác vụ văn phòng và đồ họa bán chuyên nghiệp.', specs: { "cpu": "Intel Core i7-1360P (12 nhân, 16 luồng)", "ram": "16GB LPDDR5 6000MHz", "storage": "512GB SSD PCIe Gen4", "screen": "13.4 inch FHD+ IPS (1920x1200) Touch", "gpu": "Intel Iris Xe Graphics", "battery": "55Wh (khoảng 8-10 giờ)", "weight": "1.26kg" }, images: ['https://images.unsplash.com/photo-1593642632823-8f785ba67e45?w=600'], rating_avg: 4.5 },
-  { id: 'prod-6', category: 'phone', brand: 'Apple', name: 'iPhone 15 Pro Max 256GB', price: 29990000, stock: 25, description: 'Siêu phẩm iPhone 15 Pro Max với khung viền Titanium siêu nhẹ và bền bỉ. Nút Action mới thay thế nút gạt rung truyền thống. Hệ thống camera zoom quang học 5x cực đại và vi xử lý Apple A17 Pro 3nm đỉnh cao.', specs: { "chip": "Apple A17 Pro (3nm)", "ram": "8GB", "storage": "256GB", "screen": "6.7 inch Super Retina XDR OLED 120Hz", "battery": "4441mAh (lên đến 29 giờ xem video)", "camera": "48MP (Chính) + 12MP (Góc rộng) + 12MP (Tele 5x)" }, images: ['https://images.unsplash.com/photo-1510557880182-3d4d3cba35a5?w=600'], rating_avg: 4.8 },
-  { id: 'prod-7', category: 'phone', brand: 'Samsung', name: 'Samsung Galaxy S24 Ultra 256GB', price: 26990000, stock: 20, description: 'Galaxy S24 Ultra tích hợp trí tuệ nhân tạo Galaxy AI vượt trội (dịch trực tiếp cuộc gọi, khoanh tròn tìm kiếm thông minh). Bút S Pen đi kèm tiện dụng và thiết kế phẳng viền Titanium sang trọng.', specs: { "chip": "Snapdragon 8 Gen 3 for Galaxy", "ram": "12GB", "storage": "256GB", "screen": "6.8 inch Dynamic AMOLED 2X 120Hz (3120x1440)", "battery": "5000mAh (Sạc nhanh 45W)", "camera": "200MP (Chính) + 50MP (Tele 5x) + 10MP (Tele 3x) + 12MP (Góc rộng)" }, images: ['https://images.unsplash.com/photo-1610945265064-0e34e5519bbf?w=600'], rating_avg: 4.7 }
-];
+// ─────────────────────────────────────────────────────────────────────────────
+// Các trường spec cần ẩn khỏi bảng hiển thị (lưu nội bộ)
+// ─────────────────────────────────────────────────────────────────────────────
+const HIDDEN_SPEC_KEYS = new Set([
+  'original_link', 'ratings_count', 'color_options', 'color_images', 'variants',
+]);
 
-const MOCK_REVIEWS = [
-  { id: 'r1', user_name: 'Nguyễn Văn A', rating: 5, comment: 'Sản phẩm dùng cực kỳ mượt mà, màn hình siêu nét. Giao hàng rất nhanh chỉ trong 2 tiếng hỏa tốc.', created_at: '2026-06-25' },
-  { id: 'r2', user_name: 'Trần Thị B', rating: 4, comment: 'Đóng gói chắc chắn, thiết kế rất sang trọng và nhẹ. Tuy nhiên máy chạy tác vụ nặng hơi ấm một chút.', created_at: '2026-06-28' }
-];
+// Tên tiếng Việt cho các trường spec phổ biến
+const SPEC_LABELS: Record<string, string> = {
+  ram: 'RAM', storage: 'Bộ nhớ trong', cpu: 'Bộ xử lý (CPU)', gpu: 'Chip đồ họa (GPU)',
+  screen: 'Màn hình', battery: 'Pin', weight: 'Trọng lượng', camera: 'Camera',
+  chip: 'Chip xử lý', os: 'Hệ điều hành', connectivity: 'Kết nối',
+  display: 'Màn hình', resolution: 'Độ phân giải', refresh_rate: 'Tần số quét',
+  charging: 'Sạc nhanh', nfc: 'NFC', fingerprint: 'Cảm biến vân tay',
+  sim: 'SIM', network: 'Mạng di động', usb: 'Cổng kết nối',
+  waterproof: 'Chống nước', bluetooth: 'Bluetooth', wifi: 'Wi-Fi',
+  sound: 'Âm thanh', mic: 'Micro', anc: 'Chống ồn chủ động (ANC)',
+  type: 'Loại', material: 'Chất liệu', color: 'Màu', warranty: 'Bảo hành',
+  band: 'Dây đeo', case_size: 'Kích thước mặt đồng hồ', health: 'Sức khỏe',
+};
 
+function getSpecLabel(key: string): string {
+  return SPEC_LABELS[key.toLowerCase()] || key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COMPONENT CHÍNH
+// ─────────────────────────────────────────────────────────────────────────────
 export default function ProductDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -32,21 +46,19 @@ export default function ProductDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
 
+  // Lựa chọn màu sắc
+  const [selectedColor, setSelectedColor] = useState<string>('');
+  // Lựa chọn cấu hình (variant)
+  const [selectedVariant, setSelectedVariant] = useState<any>(null);
+  // Giá hiển thị (cập nhật khi chọn variant)
+  const [displayPrice, setDisplayPrice] = useState<number>(0);
+
   const addItem = useCart((state) => state.addItem);
 
   useEffect(() => {
     const fetchProductData = async () => {
       setIsLoading(true);
-      if (!isSupabaseConfigured) {
-        const found = FALLBACK_ALL_PRODUCTS.find((p) => p.id === id) || FALLBACK_ALL_PRODUCTS[0];
-        setProduct(found);
-        setActiveImage(found.images[0]);
-        setReviews(MOCK_REVIEWS);
-        setIsLoading(false);
-        return;
-      }
       try {
-        // 1. Tải chi tiết sản phẩm
         const { data: prodData, error: prodError } = await supabase
           .from('products')
           .select('*')
@@ -54,67 +66,81 @@ export default function ProductDetailPage() {
           .single();
 
         if (prodError || !prodData) {
-          throw new Error('Không tìm thấy sản phẩm trên Supabase');
+          throw new Error('Không tìm thấy sản phẩm');
         }
 
         setProduct(prodData);
-        setActiveImage(prodData.images[0]);
+        setDisplayPrice(prodData.price);
+        setActiveImage(prodData.images?.[0] || '');
 
-        // 2. Tải reviews sản phẩm
+        // Chọn màu mặc định
+        if (prodData.specs?.color_options?.[0]) {
+          setSelectedColor(prodData.specs.color_options[0]);
+        }
+        // Chọn variant mặc định (cấu hình đầu tiên)
+        if (prodData.specs?.variants?.length > 0) {
+          setSelectedVariant(prodData.specs.variants[0]);
+          setDisplayPrice(prodData.specs.variants[0].price || prodData.price);
+        }
+
+        // Tải reviews
         const { data: revData } = await supabase
           .from('reviews')
           .select('*')
           .eq('product_id', id);
-
-        if (revData) {
-          setReviews(revData);
-        }
+        if (revData) setReviews(revData);
       } catch (err) {
-        console.warn('Lỗi kết nối hoặc ID không khớp uuid, sử dụng dữ liệu fallback:', err);
-        const found = FALLBACK_ALL_PRODUCTS.find((p) => p.id === id) || FALLBACK_ALL_PRODUCTS[0];
-        setProduct(found);
-        setActiveImage(found.images[0]);
-        setReviews(MOCK_REVIEWS);
+        console.warn('Lỗi tải sản phẩm:', err);
+        setProduct(null);
       } finally {
         setIsLoading(false);
       }
     };
 
-    if (id) {
-      fetchProductData();
-    }
+    if (id) fetchProductData();
   }, [id]);
 
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price);
+  const formatPrice = (price: number) =>
+    new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price);
+
+  // Tên sản phẩm kèm màu và cấu hình đã chọn
+  const getFinalName = () => {
+    if (!product) return '';
+    let name = product.name;
+    const suffixes = [];
+    if (selectedColor) suffixes.push(selectedColor);
+    if (selectedVariant?.label) suffixes.push(selectedVariant.label);
+    return suffixes.length > 0 ? `${name} (${suffixes.join(' / ')})` : name;
   };
 
   const handleAddToCart = () => {
     if (!product) return;
+    const finalName = getFinalName();
     addItem({
       id: product.id,
-      name: product.name,
-      price: product.price,
-      image: product.images[0],
+      name: finalName,
+      price: displayPrice,
+      image: activeImage || product.images?.[0],
       category: product.category,
       brand: product.brand,
     }, quantity);
-    alert(`Đã thêm ${quantity} sản phẩm "${product.name}" vào giỏ hàng!`);
+    alert(`Đã thêm ${quantity} sản phẩm "${finalName}" vào giỏ hàng!`);
   };
 
   const handleBuyNow = () => {
     if (!product) return;
     addItem({
       id: product.id,
-      name: product.name,
-      price: product.price,
-      image: product.images[0],
+      name: getFinalName(),
+      price: displayPrice,
+      image: activeImage || product.images?.[0],
       category: product.category,
       brand: product.brand,
     }, quantity);
     router.push('/cart');
   };
 
+  // ── Loading ──
   if (isLoading) {
     return (
       <div className="container mx-auto px-4 py-16 flex items-center justify-center flex-1">
@@ -126,6 +152,7 @@ export default function ProductDetailPage() {
     );
   }
 
+  // ── Không tìm thấy ──
   if (!product) {
     return (
       <div className="container mx-auto px-4 py-16 text-center flex-1">
@@ -136,6 +163,15 @@ export default function ProductDetailPage() {
       </div>
     );
   }
+
+  const colorOptions: string[] = product.specs?.color_options || [];
+  const colorImages: string[] = product.specs?.color_images || [];
+  const variants: any[] = product.specs?.variants || [];
+
+  // Lọc spec để hiển thị (bỏ các key nội bộ)
+  const displaySpecs = Object.entries(product.specs || {}).filter(
+    ([key]) => !HIDDEN_SPEC_KEYS.has(key)
+  );
 
   return (
     <div className="container mx-auto px-4 py-8 flex-1 space-y-12 transition-colors duration-200">
@@ -152,19 +188,26 @@ export default function ProductDetailPage() {
         {/* Cột trái: Thư viện Ảnh */}
         <div className="space-y-4">
           <div className="w-full aspect-square rounded-2xl bg-card border border-border flex items-center justify-center overflow-hidden p-8">
-            <img src={activeImage} alt={product.name} className="w-[90%] h-[90%] object-contain" />
+            {activeImage ? (
+              <img src={activeImage} alt={product.name} className="w-[90%] h-[90%] object-contain" />
+            ) : (
+              <div className="w-full h-full bg-muted/40 flex items-center justify-center rounded-xl">
+                <span className="text-muted-foreground text-sm">Không có ảnh</span>
+              </div>
+            )}
           </div>
-          {product.images.length > 1 && (
-            <div className="flex gap-4 overflow-x-auto py-1">
+          {/* Thumbnail gallery */}
+          {product.images?.length > 1 && (
+            <div className="flex gap-3 overflow-x-auto py-1">
               {product.images.map((img: string, index: number) => (
                 <button
                   key={index}
                   onClick={() => setActiveImage(img)}
-                  className={`w-20 h-20 rounded-xl bg-card border overflow-hidden p-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                  className={`w-20 h-20 rounded-xl bg-card border overflow-hidden p-2 flex items-center justify-center flex-shrink-0 transition-all cursor-pointer ${
                     activeImage === img ? 'border-primary shadow-md shadow-primary/10' : 'border-border hover:border-muted-foreground/35'
                   }`}
                 >
-                  <img src={img} alt={`${product.name} - ${index}`} className="w-full h-full object-contain" />
+                  <img src={img} alt={`${product.name} ${index + 1}`} className="w-full h-full object-contain" />
                 </button>
               ))}
             </div>
@@ -172,7 +215,8 @@ export default function ProductDetailPage() {
         </div>
 
         {/* Cột phải: Thông tin & Nút mua */}
-        <div className="space-y-6">
+        <div className="space-y-5">
+          {/* Brand + Tên + Rating */}
           <div className="space-y-2">
             <span className="inline-block px-3 py-1 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20 uppercase">
               {product.brand}
@@ -184,17 +228,29 @@ export default function ProductDetailPage() {
               <div className="flex items-center gap-1 text-sm text-yellow-500">
                 <Star className="w-4 h-4 fill-yellow-500" />
                 <span className="font-bold text-foreground">{product.rating_avg}</span>
-                <span className="text-muted-foreground">({reviews.length} đánh giá)</span>
+                <span className="text-muted-foreground">
+                  ({product.specs?.ratings_count
+                    ? `${Number(product.specs.ratings_count).toLocaleString('vi-VN')} đánh giá Amazon`
+                    : `${reviews.length} đánh giá`})
+                </span>
               </div>
             )}
           </div>
 
-          <div className="text-3xl font-black text-primary animate-pulse">
-            {formatPrice(product.price)}
+          {/* Giá (cập nhật theo variant đã chọn) */}
+          <div className="space-y-1">
+            <div className="text-3xl font-black text-primary">
+              {formatPrice(displayPrice)}
+            </div>
+            {variants.length > 1 && selectedVariant && (
+              <p className="text-xs text-muted-foreground">
+                Giá cho cấu hình: <span className="font-semibold text-foreground">{selectedVariant.label}</span>
+              </p>
+            )}
           </div>
 
-          {/* Dịch vụ cam kết */}
-          <div className="grid grid-cols-3 gap-4 border-y border-border py-4 text-xs text-muted-foreground">
+          {/* Cam kết dịch vụ */}
+          <div className="grid grid-cols-3 gap-3 border-y border-border py-4 text-xs text-muted-foreground">
             <div className="flex flex-col items-center text-center gap-2">
               <ShieldCheck className="w-5 h-5 text-emerald-500" />
               <span>Chính hãng 100%</span>
@@ -205,16 +261,85 @@ export default function ProductDetailPage() {
             </div>
             <div className="flex flex-col items-center text-center gap-2">
               <RefreshCw className="w-5 h-5 text-primary" />
-              <span>Lỗi 1 đổi 1 nhanh chóng</span>
+              <span>Lỗi 1 đổi 1</span>
             </div>
           </div>
 
-          <p className="text-muted-foreground text-sm leading-relaxed">
-            {product.description}
-          </p>
+          {/* Mô tả */}
+          <p className="text-muted-foreground text-sm leading-relaxed">{product.description}</p>
+
+          {/* ── CHỌN PHIÊN BẢN / CẤU HÌNH (Variants) ── */}
+          {variants.length > 0 && (
+            <div className="space-y-2.5 border-t border-border/40 pt-4">
+              <div className="flex items-center gap-2">
+                <Cpu className="w-3.5 h-3.5 text-muted-foreground" />
+                <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                  Phiên bản / Cấu hình:
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {variants.map((v: any, idx: number) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      setSelectedVariant(v);
+                      setDisplayPrice(v.price || product.price);
+                    }}
+                    className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all active:scale-95 cursor-pointer text-left ${
+                      selectedVariant?.label === v.label
+                        ? 'border-primary bg-primary/10 text-primary shadow-sm shadow-primary/10'
+                        : 'border-border bg-card text-foreground hover:bg-muted'
+                    }`}
+                  >
+                    <div>{v.label}</div>
+                    {v.price && v.price !== product.price && (
+                      <div className={`text-[10px] font-normal mt-0.5 ${selectedVariant?.label === v.label ? 'text-primary/80' : 'text-muted-foreground'}`}>
+                        {formatPrice(v.price)}
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── CHỌN MÀU SẮC ── */}
+          {colorOptions.length > 0 && (
+            <div className="space-y-2.5 border-t border-border/40 pt-4">
+              <div className="flex items-center gap-2">
+                <Layers className="w-3.5 h-3.5 text-muted-foreground" />
+                <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                  Màu sắc: {selectedColor && <span className="text-foreground normal-case font-semibold">{selectedColor}</span>}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {colorOptions.map((colorName: string, idx: number) => (
+                  <button
+                    key={colorName}
+                    type="button"
+                    onClick={() => {
+                      setSelectedColor(colorName);
+                      // Đổi ảnh theo màu đã chọn
+                      if (colorImages[idx]) {
+                        setActiveImage(colorImages[idx]);
+                      }
+                    }}
+                    className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all active:scale-95 cursor-pointer ${
+                      selectedColor === colorName
+                        ? 'border-primary bg-primary/10 text-primary shadow-sm shadow-primary/5'
+                        : 'border-border bg-card text-foreground hover:bg-muted'
+                    }`}
+                  >
+                    {colorName}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Số lượng */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 border-t border-border/40 pt-4">
             <span className="text-sm font-semibold text-muted-foreground">Số lượng:</span>
             <div className="flex items-center border border-border rounded-xl overflow-hidden bg-card">
               <button
@@ -231,49 +356,106 @@ export default function ProductDetailPage() {
                 +
               </button>
             </div>
-            <span className="text-xs text-muted-foreground">({product.stock} sản phẩm còn lại)</span>
+            <span className="text-xs text-muted-foreground">({product.stock} còn hàng)</span>
           </div>
 
-          {/* Các nút hành động */}
-          <div className="flex gap-4 pt-4">
-            <button
-              onClick={handleAddToCart}
-              className="flex-1 flex items-center justify-center gap-2 h-12 rounded-xl border border-primary/40 bg-primary/10 hover:bg-primary/20 text-primary font-bold transition-all text-sm cursor-pointer"
-            >
-              <ShoppingCart className="w-4 h-4" />
-              <span>Thêm vào giỏ</span>
-            </button>
-            <button
-              onClick={handleBuyNow}
-              className="flex-1 h-12 rounded-xl bg-primary hover:opacity-95 text-primary-foreground font-bold hover:shadow-lg hover:shadow-primary/20 active:scale-95 transition-all text-sm cursor-pointer"
-            >
-              Mua ngay
-            </button>
+          {/* Nút hành động */}
+          <div className="flex flex-col gap-3 pt-2">
+            <div className="flex gap-4">
+              <button
+                onClick={handleAddToCart}
+                disabled={product.stock === 0}
+                className="flex-1 flex items-center justify-center gap-2 h-12 rounded-xl border border-primary/40 bg-primary/10 hover:bg-primary/20 text-primary font-bold transition-all text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <ShoppingCart className="w-4 h-4" />
+                <span>Thêm vào giỏ</span>
+              </button>
+              <button
+                onClick={handleBuyNow}
+                disabled={product.stock === 0}
+                className="flex-1 h-12 rounded-xl bg-primary hover:opacity-95 text-primary-foreground font-bold hover:shadow-lg hover:shadow-primary/20 active:scale-95 transition-all text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {product.stock === 0 ? 'Hết hàng' : 'Mua ngay'}
+              </button>
+            </div>
+
+            {product.specs?.original_link && (
+              <a
+                href={product.specs.original_link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full flex items-center justify-center gap-2 h-10 rounded-xl border border-amber-500/35 bg-amber-500/5 hover:bg-amber-500/10 text-amber-600 dark:text-amber-500 font-bold transition-all text-xs"
+              >
+                <span>🌐 Xem sản phẩm gốc trên Amazon India</span>
+              </a>
+            )}
           </div>
         </div>
       </div>
 
       {/* THÔNG SỐ KỸ THUẬT & REVIEWS */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-12 pt-8 border-t border-border">
-        {/* Cột trái + giữa: Specs (Thông số kỹ thuật) */}
+        {/* Specs */}
         <div className="md:col-span-2 space-y-4">
           <h2 className="text-lg font-bold text-foreground">Thông số kỹ thuật chi tiết</h2>
-          <div className="rounded-2xl border border-border bg-card/20 overflow-hidden">
-            {Object.entries(product.specs).map(([key, val]: [string, any], index: number) => (
-              <div
-                key={key}
-                className={`grid grid-cols-3 p-4 text-xs sm:text-sm border-b border-border/50 ${
-                  index % 2 === 0 ? 'bg-muted/30' : ''
-                }`}
-              >
-                <span className="font-semibold text-muted-foreground capitalize">{key.replace('_', ' ')}</span>
-                <span className="col-span-2 text-foreground font-medium">{String(val)}</span>
+
+          {/* Bảng variants (cấu hình) nếu có */}
+          {variants.length > 0 && (
+            <div className="rounded-2xl border border-border bg-card/30 overflow-hidden mb-4">
+              <div className="px-4 py-3 bg-primary/5 border-b border-border flex items-center gap-2">
+                <Cpu className="w-4 h-4 text-primary" />
+                <span className="font-bold text-sm text-foreground">Các phiên bản có sẵn</span>
               </div>
-            ))}
-          </div>
+              <div className="divide-y divide-border/50">
+                {variants.map((v: any, idx: number) => (
+                  <div key={idx} className="flex items-center justify-between px-4 py-3 text-sm hover:bg-muted/30 transition-colors">
+                    <div className="space-y-0.5">
+                      <span className="font-semibold text-foreground">{v.label}</span>
+                      {(v.ram || v.storage) && (
+                        <div className="flex gap-3 text-xs text-muted-foreground">
+                          {v.ram && (
+                            <span className="flex items-center gap-1">
+                              <Cpu className="w-3 h-3" /> RAM: {v.ram}
+                            </span>
+                          )}
+                          {v.storage && (
+                            <span className="flex items-center gap-1">
+                              <HardDrive className="w-3 h-3" /> Bộ nhớ: {v.storage}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <span className="font-bold text-primary text-sm">{formatPrice(v.price || product.price)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Bảng specs kỹ thuật */}
+          {displaySpecs.length > 0 ? (
+            <div className="rounded-2xl border border-border bg-card/20 overflow-hidden">
+              {displaySpecs.map(([key, val]: [string, any], index: number) => (
+                <div
+                  key={key}
+                  className={`grid grid-cols-3 p-4 text-xs sm:text-sm border-b border-border/50 last:border-0 ${
+                    index % 2 === 0 ? 'bg-muted/30' : ''
+                  }`}
+                >
+                  <span className="font-semibold text-muted-foreground">{getSpecLabel(key)}</span>
+                  <span className="col-span-2 text-foreground font-medium">
+                    {Array.isArray(val) ? val.join(', ') : String(val)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-muted-foreground text-sm italic">Chưa có thông số kỹ thuật chi tiết.</p>
+          )}
         </div>
 
-        {/* Cột phải: Đánh giá (Reviews) */}
+        {/* Reviews */}
         <div className="space-y-6">
           <h2 className="text-lg font-bold text-foreground">Đánh giá từ khách hàng</h2>
           {reviews.length === 0 ? (
@@ -291,9 +473,7 @@ export default function ProductDetailPage() {
                       <Star key={i} className="w-3.5 h-3.5 fill-yellow-500" />
                     ))}
                   </div>
-                  <p className="text-muted-foreground text-xs sm:text-sm leading-relaxed">
-                    {rev.comment}
-                  </p>
+                  <p className="text-muted-foreground text-xs sm:text-sm leading-relaxed">{rev.comment}</p>
                 </div>
               ))}
             </div>

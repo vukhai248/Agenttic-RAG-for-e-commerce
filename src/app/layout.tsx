@@ -15,6 +15,8 @@ export const metadata: Metadata = {
   description: "Cửa hàng TMĐT cung cấp Laptop, Điện thoại, Tai nghe và Phụ kiện cao cấp hàng đầu Việt Nam, tích hợp trợ lý AI hỗ trợ khách hàng thông minh 24/7.",
 };
 
+import { Suspense } from "react";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -42,7 +44,9 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-full flex flex-col bg-background text-foreground font-sans selection:bg-primary selection:text-primary-foreground transition-colors duration-200">
-        <Header />
+        <Suspense fallback={<div className="h-16 border-b border-border bg-card/50 animate-pulse" />}>
+          <Header />
+        </Suspense>
         <main className="flex-1 flex flex-col">{children}</main>
         <Footer />
         <ChatWidget />
