@@ -48,6 +48,12 @@ export default function ProductDetailPage() {
 
   // Lựa chọn màu sắc
   const [selectedColor, setSelectedColor] = useState<string>('');
+  // Lựa chọn cấu hình RAM/ROM
+  const [selectedRamRom, setSelectedRamRom] = useState<string>('');
+  // Lựa chọn Tình trạng / Phân loại hàng
+  const [selectedCondition, setSelectedCondition] = useState<string>('');
+  // Lựa chọn loại hàng (Edition)
+  const [selectedEdition, setSelectedEdition] = useState<any>(null);
   // Lựa chọn cấu hình (variant)
   const [selectedVariant, setSelectedVariant] = useState<any>(null);
   // Giá hiển thị (cập nhật khi chọn variant)
@@ -73,14 +79,59 @@ export default function ProductDetailPage() {
         setDisplayPrice(prodData.price);
         setActiveImage(prodData.images?.[0] || '');
 
-        // Chọn màu mặc định
-        if (prodData.specs?.color_options?.[0]) {
-          setSelectedColor(prodData.specs.color_options[0]);
-        }
-        // Chọn variant mặc định (cấu hình đầu tiên)
-        if (prodData.specs?.variants?.length > 0) {
-          setSelectedVariant(prodData.specs.variants[0]);
-          setDisplayPrice(prodData.specs.variants[0].price || prodData.price);
+        const dbVariants = prodData.specs?.variants || [];
+        
+        // 1. Lấy danh sách Color độc nhất
+        const colorsList: string[] = [];
+        dbVariants.forEach((v: any) => {
+          if (v.color && !colorsList.includes(v.color)) {
+            colorsList.push(v.color);
+          }
+        });
+        const finalColors = colorsList.length > 0 ? colorsList : (prodData.specs?.color_options || []);
+
+        // 2. Lấy danh sách RAM/ROM độc nhất
+        const ramRomsList: string[] = [];
+        dbVariants.forEach((v: any) => {
+          const combined = v.ram && v.storage ? `${v.ram}/${v.storage}` : (v.ram || v.storage || '');
+          if (combined && !ramRomsList.includes(combined)) {
+            ramRomsList.push(combined);
+          }
+        });
+
+        // 3. Lấy danh sách Tình trạng độc nhất
+        const conditionsList: string[] = [];
+        dbVariants.forEach((v: any) => {
+          if (v.condition && !conditionsList.includes(v.condition)) {
+            conditionsList.push(v.condition);
+          }
+        });
+
+        // Chọn mặc định
+        let defaultColor = finalColors.length > 0 ? finalColors[0] : '';
+        let defaultRamRom = ramRomsList.length > 0 ? ramRomsList[0] : '';
+        let defaultCondition = conditionsList.length > 0 ? conditionsList[0] : '';
+
+        if (defaultColor) setSelectedColor(defaultColor);
+        if (defaultRamRom) setSelectedRamRom(defaultRamRom);
+        if (defaultCondition) setSelectedCondition(defaultCondition);
+
+        // Tìm variant khớp
+        if (dbVariants.length > 0) {
+          const matched = dbVariants.find((v: any) => {
+            const vCombined = v.ram && v.storage ? `${v.ram}/${v.storage}` : (v.ram || v.storage || '');
+            const matchColor = !v.color || v.color.toLowerCase() === defaultColor.toLowerCase();
+            const matchRamRom = !vCombined || vCombined === defaultRamRom;
+            const matchCondition = !v.condition || v.condition.toLowerCase() === defaultCondition.toLowerCase();
+            return matchColor && matchRamRom && matchCondition;
+          });
+
+          const activeVar = matched || dbVariants[0];
+          setSelectedVariant(activeVar);
+          setDisplayPrice(activeVar.price || prodData.price);
+          if (activeVar.image) {
+            setActiveImage(activeVar.image);
+          }
         }
 
         // Tải reviews
@@ -103,13 +154,81 @@ export default function ProductDetailPage() {
   const formatPrice = (price: number) =>
     new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price);
 
-  // Tên sản phẩm kèm màu và cấu hình đã chọn
+  // Xử lý khi người dùng chọn thuộc tính Màu Sắc
+  const handleSelectColor = (color: string) => {
+    setSelectedColor(color);
+    const dbVariants = product?.specs?.variants || [];
+    const candidates = dbVariants.filter((v: any) => v.color?.toLowerCase() === color.toLowerCase());
+    
+    if (candidates.length > 0) {
+      let matched = candidates.find((v: any) => {
+        const vCombined = v.ram && v.storage ? `${v.ram}/${v.storage}` : (v.ram || v.storage || '');
+        return vCombined === selectedRamRom;
+      });
+      if (!matched) matched = candidates[0];
+      
+      const vCombined = matched.ram && matched.storage ? `${matched.ram}/${matched.storage}` : (matched.ram || matched.storage || '');
+      if (vCombined) setSelectedRamRom(vCombined);
+      if (matched.condition) setSelectedCondition(matched.condition);
+      setSelectedVariant(matched);
+      setDisplayPrice(matched.price || product.price);
+      if (matched.image) setActiveImage(matched.image);
+    } else {
+      const idx = product?.specs?.color_options?.indexOf(color);
+      if (idx !== -1 && product?.specs?.color_images?.[idx]) {
+        setActiveImage(product.specs.color_images[idx]);
+      }
+    }
+  };
+
+  // Xử lý khi người dùng chọn cấu hình RAM/ROM
+  const handleSelectRamRom = (ramRom: string) => {
+    setSelectedRamRom(ramRom);
+    const dbVariants = product?.specs?.variants || [];
+    const candidates = dbVariants.filter((v: any) => {
+      const vCombined = v.ram && v.storage ? `${v.ram}/${v.storage}` : (v.ram || v.storage || '');
+      return vCombined === ramRom;
+    });
+
+    if (candidates.length > 0) {
+      let matched = candidates.find((v: any) => v.color?.toLowerCase() === selectedColor.toLowerCase());
+      if (!matched) matched = candidates[0];
+      
+      if (matched.color) setSelectedColor(matched.color);
+      if (matched.condition) setSelectedCondition(matched.condition);
+      setSelectedVariant(matched);
+      setDisplayPrice(matched.price || product.price);
+      if (matched.image) setActiveImage(matched.image);
+    }
+  };
+
+  // Xử lý khi người dùng chọn Tình Trạng
+  const handleSelectCondition = (cond: string) => {
+    setSelectedCondition(cond);
+    const dbVariants = product?.specs?.variants || [];
+    const candidates = dbVariants.filter((v: any) => v.condition?.toLowerCase() === cond.toLowerCase());
+
+    if (candidates.length > 0) {
+      let matched = candidates.find((v: any) => v.color?.toLowerCase() === selectedColor.toLowerCase());
+      if (!matched) matched = candidates[0];
+      
+      if (matched.color) setSelectedColor(matched.color);
+      const vCombined = matched.ram && matched.storage ? `${matched.ram}/${matched.storage}` : (matched.ram || matched.storage || '');
+      if (vCombined) setSelectedRamRom(vCombined);
+      setSelectedVariant(matched);
+      setDisplayPrice(matched.price || product.price);
+      if (matched.image) setActiveImage(matched.image);
+    }
+  };
+
+  // Tên sản phẩm kèm các tag đã chọn
   const getFinalName = () => {
     if (!product) return '';
     let name = product.name;
     const suffixes = [];
     if (selectedColor) suffixes.push(selectedColor);
-    if (selectedVariant?.label) suffixes.push(selectedVariant.label);
+    if (selectedRamRom) suffixes.push(selectedRamRom);
+    if (selectedCondition) suffixes.push(selectedCondition);
     return suffixes.length > 0 ? `${name} (${suffixes.join(' / ')})` : name;
   };
 
@@ -164,14 +283,69 @@ export default function ProductDetailPage() {
     );
   }
 
-  const colorOptions: string[] = product.specs?.color_options || [];
-  const colorImages: string[] = product.specs?.color_images || [];
-  const variants: any[] = product.specs?.variants || [];
+  // Trích xuất danh sách các tùy chọn có sẵn từ variants
+  const dbVariants = product?.specs?.variants || [];
+  
+  // 1. Màu sắc
+  const finalColors: string[] = [];
+  dbVariants.forEach((v: any) => {
+    if (v.color && !finalColors.includes(v.color)) {
+      finalColors.push(v.color);
+    }
+  });
+  if (finalColors.length === 0) {
+    (product?.specs?.color_options || []).forEach((c: string) => finalColors.push(c));
+  }
 
-  // Lọc spec để hiển thị (bỏ các key nội bộ)
+  // 2. RAM/ROM
+  const finalRamRoms: string[] = [];
+  dbVariants.forEach((v: any) => {
+    const combined = v.ram && v.storage ? `${v.ram}/${v.storage}` : (v.ram || v.storage || '');
+    if (combined && !finalRamRoms.includes(combined)) {
+      finalRamRoms.push(combined);
+    }
+  });
+
+  // 3. Tình trạng
+  const finalConditions: string[] = [];
+  dbVariants.forEach((v: any) => {
+    if (v.condition && !finalConditions.includes(v.condition)) {
+      finalConditions.push(v.condition);
+    }
+  });
+
+  // Lọc spec để hiển thị (bỏ các key nội bộ và editions)
   const displaySpecs = Object.entries(product.specs || {}).filter(
-    ([key]) => !HIDDEN_SPEC_KEYS.has(key)
+    ([key]) => !HIDDEN_SPEC_KEYS.has(key) && key !== 'editions'
   );
+
+  // Kiểm tra xem một thuộc tính có khả dụng với các lựa chọn hiện tại hay không
+  const isColorAvailable = (colorName: string) => {
+    return dbVariants.some((v: any) => {
+      const vCombined = v.ram && v.storage ? `${v.ram}/${v.storage}` : (v.ram || v.storage || '');
+      const matchRamRom = !selectedRamRom || vCombined === selectedRamRom;
+      const matchCondition = !selectedCondition || v.condition?.toLowerCase() === selectedCondition.toLowerCase();
+      return v.color?.toLowerCase() === colorName.toLowerCase() && matchRamRom && matchCondition;
+    });
+  };
+
+  const isRamRomAvailable = (ramRomVal: string) => {
+    return dbVariants.some((v: any) => {
+      const vCombined = v.ram && v.storage ? `${v.ram}/${v.storage}` : (v.ram || v.storage || '');
+      const matchColor = !selectedColor || v.color?.toLowerCase() === selectedColor.toLowerCase();
+      const matchCondition = !selectedCondition || v.condition?.toLowerCase() === selectedCondition.toLowerCase();
+      return vCombined === ramRomVal && matchColor && matchCondition;
+    });
+  };
+
+  const isConditionAvailable = (condVal: string) => {
+    return dbVariants.some((v: any) => {
+      const vCombined = v.ram && v.storage ? `${v.ram}/${v.storage}` : (v.ram || v.storage || '');
+      const matchColor = !selectedColor || v.color?.toLowerCase() === selectedColor.toLowerCase();
+      const matchRamRom = !selectedRamRom || vCombined === selectedRamRom;
+      return v.condition?.toLowerCase() === condVal.toLowerCase() && matchColor && matchRamRom;
+    });
+  };
 
   return (
     <div className="container mx-auto px-4 py-8 flex-1 space-y-12 transition-colors duration-200">
@@ -242,7 +416,7 @@ export default function ProductDetailPage() {
             <div className="text-3xl font-black text-primary">
               {formatPrice(displayPrice)}
             </div>
-            {variants.length > 1 && selectedVariant && (
+            {dbVariants.length > 1 && selectedVariant && (
               <p className="text-xs text-muted-foreground">
                 Giá cho cấu hình: <span className="font-semibold text-foreground">{selectedVariant.label}</span>
               </p>
@@ -268,8 +442,40 @@ export default function ProductDetailPage() {
           {/* Mô tả */}
           <p className="text-muted-foreground text-sm leading-relaxed">{product.description}</p>
 
-          {/* ── CHỌN PHIÊN BẢN / CẤU HÌNH (Variants) ── */}
-          {variants.length > 0 && (
+          {/* ── CHỌN TÌNH TRẠNG / PHÂN LOẠI ── */}
+          {finalConditions.length > 0 && (
+            <div className="space-y-2.5 border-t border-border/40 pt-4">
+              <div className="flex items-center gap-2">
+                <Layers className="w-3.5 h-3.5 text-muted-foreground" />
+                <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                  Phân loại / Tình trạng:
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {finalConditions.map((cond: string) => {
+                  const isAvailable = isConditionAvailable(cond);
+                  return (
+                    <button
+                      key={cond}
+                      type="button"
+                      disabled={!isAvailable}
+                      onClick={() => handleSelectCondition(cond)}
+                      className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all active:scale-95 text-left ${
+                        selectedCondition === cond
+                          ? 'border-primary bg-primary/10 text-primary shadow-sm shadow-primary/10'
+                          : 'border-border bg-card text-foreground hover:bg-muted'
+                      } ${!isAvailable ? 'opacity-25 cursor-not-allowed pointer-events-none' : 'cursor-pointer'}`}
+                    >
+                      {cond}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── CHỌN CẤU HÌNH (RAM/ROM) ── */}
+          {finalRamRoms.length > 0 && (
             <div className="space-y-2.5 border-t border-border/40 pt-4">
               <div className="flex items-center gap-2">
                 <Cpu className="w-3.5 h-3.5 text-muted-foreground" />
@@ -278,34 +484,41 @@ export default function ProductDetailPage() {
                 </span>
               </div>
               <div className="flex flex-wrap gap-2">
-                {variants.map((v: any, idx: number) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => {
-                      setSelectedVariant(v);
-                      setDisplayPrice(v.price || product.price);
-                    }}
-                    className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all active:scale-95 cursor-pointer text-left ${
-                      selectedVariant?.label === v.label
-                        ? 'border-primary bg-primary/10 text-primary shadow-sm shadow-primary/10'
-                        : 'border-border bg-card text-foreground hover:bg-muted'
-                    }`}
-                  >
-                    <div>{v.label}</div>
-                    {v.price && v.price !== product.price && (
-                      <div className={`text-[10px] font-normal mt-0.5 ${selectedVariant?.label === v.label ? 'text-primary/80' : 'text-muted-foreground'}`}>
-                        {formatPrice(v.price)}
-                      </div>
-                    )}
-                  </button>
-                ))}
+                {finalRamRoms.map((ramRom: string) => {
+                  const matchedVars = dbVariants.filter((v: any) => {
+                    const vCombined = v.ram && v.storage ? `${v.ram}/${v.storage}` : (v.ram || v.storage || '');
+                    return vCombined === ramRom;
+                  });
+                  const minPrice = matchedVars.length > 0 ? Math.min(...matchedVars.map((v: any) => v.price || product.price)) : 0;
+                  const isAvailable = isRamRomAvailable(ramRom);
+
+                  return (
+                    <button
+                      key={ramRom}
+                      type="button"
+                      disabled={!isAvailable}
+                      onClick={() => handleSelectRamRom(ramRom)}
+                      className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all active:scale-95 text-left ${
+                        selectedRamRom === ramRom
+                          ? 'border-primary bg-primary/10 text-primary shadow-sm shadow-primary/10'
+                          : 'border-border bg-card text-foreground hover:bg-muted'
+                      } ${!isAvailable ? 'opacity-25 cursor-not-allowed pointer-events-none' : 'cursor-pointer'}`}
+                    >
+                      <div>{ramRom}</div>
+                      {minPrice > 0 && minPrice !== product.price && (
+                        <div className={`text-[10px] font-normal mt-0.5 ${selectedRamRom === ramRom ? 'text-primary/80' : 'text-muted-foreground'}`}>
+                          {formatPrice(minPrice)}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
 
           {/* ── CHỌN MÀU SẮC ── */}
-          {colorOptions.length > 0 && (
+          {finalColors.length > 0 && (
             <div className="space-y-2.5 border-t border-border/40 pt-4">
               <div className="flex items-center gap-2">
                 <Layers className="w-3.5 h-3.5 text-muted-foreground" />
@@ -314,26 +527,36 @@ export default function ProductDetailPage() {
                 </span>
               </div>
               <div className="flex flex-wrap gap-2">
-                {colorOptions.map((colorName: string, idx: number) => (
-                  <button
-                    key={colorName}
-                    type="button"
-                    onClick={() => {
-                      setSelectedColor(colorName);
-                      // Đổi ảnh theo màu đã chọn
-                      if (colorImages[idx]) {
-                        setActiveImage(colorImages[idx]);
-                      }
-                    }}
-                    className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all active:scale-95 cursor-pointer ${
-                      selectedColor === colorName
-                        ? 'border-primary bg-primary/10 text-primary shadow-sm shadow-primary/5'
-                        : 'border-border bg-card text-foreground hover:bg-muted'
-                    }`}
-                  >
-                    {colorName}
-                  </button>
-                ))}
+                {finalColors.map((colorName: string) => {
+                  let matchedImage = '';
+                  const idx = product?.specs?.color_options?.indexOf(colorName);
+                  if (idx !== -1 && product?.specs?.color_images?.[idx]) {
+                    matchedImage = product.specs.color_images[idx];
+                  } else {
+                    const matchedVar = dbVariants.find((v: any) => v.color?.toLowerCase() === colorName.toLowerCase() && v.image);
+                    if (matchedVar) matchedImage = matchedVar.image;
+                  }
+                  const isAvailable = isColorAvailable(colorName);
+
+                  return (
+                    <button
+                      key={colorName}
+                      type="button"
+                      disabled={!isAvailable}
+                      onClick={() => {
+                        handleSelectColor(colorName);
+                        if (matchedImage) setActiveImage(matchedImage);
+                      }}
+                      className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all active:scale-95 ${
+                        selectedColor === colorName
+                          ? 'border-primary bg-primary/10 text-primary shadow-sm shadow-primary/5'
+                          : 'border-border bg-card text-foreground hover:bg-muted'
+                      } ${!isAvailable ? 'opacity-25 cursor-not-allowed pointer-events-none' : 'cursor-pointer'}`}
+                    >
+                      {colorName}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -400,14 +623,14 @@ export default function ProductDetailPage() {
           <h2 className="text-lg font-bold text-foreground">Thông số kỹ thuật chi tiết</h2>
 
           {/* Bảng variants (cấu hình) nếu có */}
-          {variants.length > 0 && (
+          {dbVariants.length > 0 && (
             <div className="rounded-2xl border border-border bg-card/30 overflow-hidden mb-4">
               <div className="px-4 py-3 bg-primary/5 border-b border-border flex items-center gap-2">
                 <Cpu className="w-4 h-4 text-primary" />
                 <span className="font-bold text-sm text-foreground">Các phiên bản có sẵn</span>
               </div>
               <div className="divide-y divide-border/50">
-                {variants.map((v: any, idx: number) => (
+                {dbVariants.map((v: any, idx: number) => (
                   <div key={idx} className="flex items-center justify-between px-4 py-3 text-sm hover:bg-muted/30 transition-colors">
                     <div className="space-y-0.5">
                       <span className="font-semibold text-foreground">{v.label}</span>

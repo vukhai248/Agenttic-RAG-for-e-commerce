@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useCart } from '@/store/useCart';
-import { Search, SlidersHorizontal, Star, ShoppingCart, ArrowUpDown, X, ChevronDown, Check, Filter } from 'lucide-react';
+import { Search, SlidersHorizontal, Star, ShoppingCart, ArrowUpDown, X, ChevronDown, Check, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const FALLBACK_ALL_PRODUCTS = [
   // Laptops
@@ -63,6 +63,8 @@ function ProductsContent() {
   const [priceRange, setPriceRange] = useState<{ min: number; max: number }>({ min: 0, max: MAX_PRICE_LIMIT });
   const [sortBy, setSortBy] = useState<string>('featured');
   const [searchTerm, setSearchTerm] = useState(queryParam);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
 
   // Trạng thái mở dropdown bộ lọc ngang
   const [activeDropdown, setActiveDropdown] = useState<'category' | 'brand' | 'price' | 'sort' | null>(null);
@@ -223,6 +225,31 @@ function ProductsContent() {
 
     setFilteredProducts(result);
   }, [products, queryParam, categoryParam, selectedBrands, priceRange, sortBy]);
+
+  // Reset trang về 1 khi có bất kỳ bộ lọc nào thay đổi
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [queryParam, categoryParam, selectedBrands, priceRange, sortBy]);
+
+  const totalItems = filteredProducts.length;
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const currentProducts = filteredProducts.slice(startIndex, endIndex);
+
+  // Hàm sinh danh sách các trang cần hiển thị thông minh
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    const range = 2;
+    for (let i = 1; i <= totalPages; i++) {
+      if (i === 1 || i === totalPages || (i >= currentPage - range && i <= currentPage + range)) {
+        pages.push(i);
+      } else if (i === currentPage - range - 1 || i === currentPage + range + 1) {
+        pages.push('...');
+      }
+    }
+    return pages.filter((page, index, arr) => arr.indexOf(page) === index);
+  };
 
   // Lọc danh sách hãng (thương hiệu) khả dụng theo Loại sản phẩm đang chọn
   const getAvailableBrands = () => {
@@ -608,7 +635,7 @@ function ProductsContent() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filteredProducts.map((prod) => (
+          {currentProducts.map((prod) => (
             <Link
               key={prod.id}
               href={`/products/${prod.id}`}
@@ -631,7 +658,7 @@ function ProductsContent() {
                       <span>{prod.rating_avg.toFixed(1)}</span>
                     </div>
                   )}
-                  {prod.discount && prod.discount > 0 && (
+                  {!!prod.discount && prod.discount > 0 && (
                     <span className="bg-red-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-md shadow-md">
                       -{Math.round(prod.discount)}%
                     </span>
@@ -672,6 +699,66 @@ function ProductsContent() {
               </div>
             </Link>
           ))}
+        </div>
+      )}
+
+      {/* PHÂN TRANG PREMIUM */}
+      {!isLoading && totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 mt-10 border-t border-border/40 pt-6">
+          <button
+            type="button"
+            onClick={() => {
+              setCurrentPage(prev => Math.max(prev - 1, 1));
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            disabled={currentPage === 1}
+            className="flex items-center justify-center w-10 h-10 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:hover:bg-card disabled:hover:text-muted-foreground transition-all cursor-pointer"
+            title="Trang trước"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+          
+          <div className="flex items-center gap-1.5">
+            {getPageNumbers().map((page, index) => {
+              if (page === '...') {
+                return (
+                  <span key={`dots-${index}`} className="w-10 h-10 flex items-center justify-center text-muted-foreground font-bold select-none">
+                    ...
+                  </span>
+                );
+              }
+              return (
+                <button
+                  key={`page-${page}`}
+                  type="button"
+                  onClick={() => {
+                    setCurrentPage(Number(page));
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  className={`w-10 h-10 rounded-xl text-xs font-black transition-all cursor-pointer border ${
+                    currentPage === page
+                      ? 'bg-primary border-primary text-primary-foreground shadow-md shadow-primary/20 scale-105'
+                      : 'bg-card border-border text-muted-foreground hover:text-foreground hover:bg-muted'
+                  }`}
+                >
+                  {page}
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setCurrentPage(prev => Math.min(prev + 1, totalPages));
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            disabled={currentPage === totalPages}
+            className="flex items-center justify-center w-10 h-10 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:hover:bg-card disabled:hover:text-muted-foreground transition-all cursor-pointer"
+            title="Trang sau"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
         </div>
       )}
 

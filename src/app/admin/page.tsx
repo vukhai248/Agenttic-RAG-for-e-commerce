@@ -26,7 +26,8 @@ import {
   Info,
   MessageSquare,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  ChevronDown
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -58,6 +59,20 @@ interface VariantRow {
 interface ColorRow {
   name: string;  // Tên màu tiếng Việt
   image: string; // URL ảnh của màu
+}
+
+interface VariantTag {
+  id: string;
+  type: 'color' | 'ram_rom' | 'condition';
+  value: string;
+  colorCode?: string;
+}
+
+interface VariantSpec {
+  id: string;
+  price: string;
+  tagIds: string[];
+  image?: string;
 }
 
 const CATEGORIES = [
@@ -145,9 +160,29 @@ export default function AdminPage() {
   const [specRows, setSpecRows] = useState<SpecRow[]>([]);
   const [variantRows, setVariantRows] = useState<VariantRow[]>([]);
   const [colorRows, setColorRows] = useState<ColorRow[]>([]);
-  const [ratingsCount, setRatingsCount] = useState('');
-  const [amazonLink, setAmazonLink] = useState('');
+  const [ramRoms, setRamRoms] = useState<string[]>([]);
+  const [newRamRom, setNewRamRom] = useState('');
+  const [prodCurrentPage, setProdCurrentPage] = useState(1);
+  const [isCatDropdownOpen, setIsCatDropdownOpen] = useState(false);
+  const catDropdownRef = useRef<HTMLDivElement>(null);
+  const [isFormCatOpen, setIsFormCatOpen] = useState(false);
+  const formCatRef = useRef<HTMLDivElement>(null);
   const [savingProduct, setSavingProduct] = useState(false);
+  const [selectedUserDetail, setSelectedUserDetail] = useState<any | null>(null);
+  const [roleConfirmOpen, setRoleConfirmOpen] = useState(false);
+  const [pendingRoleChange, setPendingRoleChange] = useState<{ userId: string; newRole: string } | null>(null);
+  const [activeUserRoleDropdown, setActiveUserRoleDropdown] = useState<string | null>(null);
+
+  // Tags Pool & Variant Specs States
+  const [availableTags, setAvailableTags] = useState<VariantTag[]>([]);
+  const [variantSpecs, setVariantSpecs] = useState<VariantSpec[]>([]);
+  const [selectedVariantIdx, setSelectedVariantIdx] = useState<number>(0);
+  const [newTagType, setNewTagType] = useState<'color' | 'ram_rom' | 'condition'>('color');
+  const [newConditionVal, setNewConditionVal] = useState('');
+  const [newColorName, setNewColorName] = useState('');
+  const [newColorCode, setNewColorCode] = useState('#2563eb');
+  const [newRamVal, setNewRamVal] = useState('');
+  const [newRomVal, setNewRomVal] = useState('');
 
   // Trợ lý AI Admin State
   const [adminChatMessages, setAdminChatMessages] = useState<any[]>([
@@ -402,13 +437,41 @@ export default function AdminPage() {
     }
   }, [panel]);
 
+  useEffect(() => {
+    setProdCurrentPage(1);
+  }, [prodSearch, prodFilterCategory]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (catDropdownRef.current && !catDropdownRef.current.contains(event.target as Node)) {
+        setIsCatDropdownOpen(false);
+      }
+      if (formCatRef.current && !formCatRef.current.contains(event.target as Node)) {
+        setIsFormCatOpen(false);
+      }
+      // Đóng dropdown gán role của user
+      const target = event.target as Element;
+      if (!target.closest('.role-dropdown-container')) {
+        setActiveUserRoleDropdown(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   // Đổi Role cho User
   const handleUpdateUserRole = async (userId: string, newRole: string) => {
-    if (!window.confirm(`Xác nhận đổi vai trò của người dùng này thành "${newRole}"?`)) return;
+    if (!isAdmin) {
+      alert('Chỉ tài khoản Quản trị viên (Admin) mới có quyền gán vai trò người dùng!');
+      return;
+    }
     setUpdatingUserRole(userId);
     try {
       if (!isSupabaseConfigured) {
         setUsers(prev => prev.map(u => u.id === userId ? { ...u, user_metadata: { ...u.user_metadata, role: newRole } } : u));
+        if (selectedUserDetail && selectedUserDetail.id === userId) {
+          setSelectedUserDetail((prev: any) => ({ ...prev, user_metadata: { ...prev.user_metadata, role: newRole } }));
+        }
         alert('Cập nhật vai trò thành công (offline mode)');
         return;
       }
@@ -429,6 +492,9 @@ export default function AdminPage() {
       if (!response.ok) throw new Error(data.error || 'Cập nhật vai trò thất bại');
       
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, user_metadata: { ...u.user_metadata, role: newRole } } : u));
+      if (selectedUserDetail && selectedUserDetail.id === userId) {
+        setSelectedUserDetail((prev: any) => ({ ...prev, user_metadata: { ...prev.user_metadata, role: newRole } }));
+      }
       alert('Đã cập nhật quyền thành công!');
     } catch (err: any) {
       console.error('Lỗi đổi role:', err);
@@ -573,26 +639,72 @@ export default function AdminPage() {
       if (row.key.trim()) specsObject[row.key.trim()] = row.value.trim();
     });
 
-    // Thêm các trường nội bộ
-    if (amazonLink.trim()) specsObject.original_link = amazonLink.trim();
-    if (ratingsCount.trim()) specsObject.ratings_count = ratingsCount.trim();
+    // Lưu trữ nguyên vẹn Kho thẻ thuộc tính (Tags Pool) của sản phẩm
+    specsObject.available_tags = availableTags;
 
-    // Đóng gói Variants
-    const validVariants = variantRows.filter(v => v.label.trim());
-    if (validVariants.length > 0) {
-      specsObject.variants = validVariants.map(v => ({
-        label: v.label.trim(),
-        price: Number(v.price) || Number(formProduct.price),
-        ram: v.ram.trim(),
-        storage: v.storage.trim(),
-      }));
-    }
+    // Đóng gói Variants từ variantSpecs và availableTags
+    const variantsList: any[] = [];
+    variantSpecs.forEach(vs => {
+      // Tìm các tag màu, tag ram_rom và tag tình trạng đã gán
+      const tags = vs.tagIds.map(tid => availableTags.find(t => t.id === tid)).filter(Boolean) as VariantTag[];
+      const colorTag = tags.find(t => t.type === 'color');
+      const ramRomTag = tags.find(t => t.type === 'ram_rom');
+      const condTag = tags.find(t => t.type === 'condition');
+      
+      // Tạo label
+      const colorVal = colorTag ? colorTag.value : '';
+      const ramRomVal = ramRomTag ? ramRomTag.value : '';
+      const condVal = condTag ? condTag.value : '';
+      let label = '';
+      const labelParts = [];
+      if (colorVal) labelParts.push(colorVal);
+      if (ramRomVal) labelParts.push(ramRomVal);
+      if (condVal) labelParts.push(condVal);
+      label = labelParts.length > 0 ? labelParts.join(' - ') : formProduct.name;
+      
+      // Trích xuất RAM và ROM
+      let ram = '';
+      let storage = '';
+      if (ramRomVal) {
+        const parts = ramRomVal.split('/');
+        ram = parts[0] || '';
+        storage = parts[1] || '';
+      }
 
-    // Đóng gói Màu sắc
-    const validColors = colorRows.filter(c => c.name.trim());
-    if (validColors.length > 0) {
-      specsObject.color_options = validColors.map(c => c.name.trim());
-      specsObject.color_images  = validColors.map(c => c.image.trim());
+      variantsList.push({
+        label,
+        price: Number(vs.price) || Number(formProduct.price),
+        ram,
+        storage,
+        color: colorVal,
+        color_code: colorTag?.colorCode || '',
+        condition: condVal,
+        image: vs.image || ''
+      });
+    });
+
+    if (variantsList.length > 0) {
+      specsObject.variants = variantsList;
+      
+      // Tự động gom nhóm màu sắc từ các variant gán để điền color_options và color_images tương thích ngược
+      const uniqueColors: { name: string; image: string }[] = [];
+      variantsList.forEach(v => {
+        if (v.color && !uniqueColors.some(c => c.name.toLowerCase() === v.color.toLowerCase())) {
+          uniqueColors.push({ name: v.color, image: v.image || formProduct.images?.[0] || '' });
+        }
+      });
+      
+      if (uniqueColors.length > 0) {
+        specsObject.color_options = uniqueColors.map(c => c.name);
+        specsObject.color_images = uniqueColors.map(c => c.image);
+      }
+    } else {
+      // Nếu không có variant, kiểm tra xem có tag màu trong availableTags không
+      const colorTags = availableTags.filter(t => t.type === 'color');
+      if (colorTags.length > 0) {
+        specsObject.color_options = colorTags.map(c => c.value);
+        specsObject.color_images = colorTags.map(() => formProduct.images?.[0] || '');
+      }
     }
 
     const payload = {
@@ -602,9 +714,8 @@ export default function AdminPage() {
       price: Number(formProduct.price),
       stock: Number(formProduct.stock),
       description: formProduct.description,
-      images: formProduct.images,
       specs: specsObject,
-      rating_avg: Number(formProduct.rating_avg)
+      images: formProduct.images,
     };
 
     try {
@@ -655,8 +766,16 @@ export default function AdminPage() {
     setSpecRows([]);
     setVariantRows([]);
     setColorRows([]);
-    setAmazonLink('');
-    setRatingsCount('');
+    setRamRoms([]);
+    setNewRamRom('');
+    setAvailableTags([]);
+    setVariantSpecs([]);
+    setSelectedVariantIdx(0);
+    setNewTagType('color');
+    setNewColorName('');
+    setNewColorCode('#2563eb');
+    setNewRamVal('');
+    setNewRomVal('');
     setModalOpen(true);
   };
 
@@ -664,23 +783,109 @@ export default function AdminPage() {
   const openEditProduct = (p: Product) => {
     setEditingProduct(p);
     setFormProduct(p);
-    setAmazonLink((p.specs as any)?.original_link || '');
-    setRatingsCount((p.specs as any)?.ratings_count || '');
 
-    // Parse variants
-    const vRows: VariantRow[] = ((p.specs as any)?.variants || []).map((v: any) => ({
-      label: v.label || '',
-      price: String(v.price || ''),
-      ram: v.ram || '',
-      storage: v.storage || '',
-    }));
-    setVariantRows(vRows);
 
-    // Parse colors
+    // Khởi tạo các mảng tag và specs mới
+    const parsedTags: VariantTag[] = [];
+    const parsedSpecs: VariantSpec[] = [];
+
+    // Lấy màu sắc gán tương thích ngược
     const colorOpts: string[] = (p.specs as any)?.color_options || [];
     const colorImgs: string[] = (p.specs as any)?.color_images || [];
     const cRows: ColorRow[] = colorOpts.map((name, idx) => ({ name, image: colorImgs[idx] || '' }));
     setColorRows(cRows);
+
+    // Kiểm tra xem sản phẩm đã lưu sẵn Kho thẻ thuộc tính chưa
+    const dbTags: VariantTag[] = (p.specs as any)?.available_tags || [];
+    if (dbTags.length > 0) {
+      dbTags.forEach(t => parsedTags.push(t));
+    } else {
+      // Parse từ color_options (Dành cho sản phẩm cũ chưa nâng cấp)
+      colorOpts.forEach((cName) => {
+        const tagId = `color-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+        parsedTags.push({
+          id: tagId,
+          type: 'color',
+          value: cName,
+          colorCode: '#2563eb' // Mặc định
+        });
+      });
+    }
+
+    // Parse variants từ DB
+    const dbVariants = (p.specs as any)?.variants || [];
+    dbVariants.forEach((v: any) => {
+      const vTagIds: string[] = [];
+
+      // 1. Xử lý màu sắc
+      if (v.color) {
+        let matchedColorTag = parsedTags.find(t => t.type === 'color' && t.value.toLowerCase() === v.color.toLowerCase());
+        if (!matchedColorTag) {
+          const tagId = `color-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+          matchedColorTag = {
+            id: tagId,
+            type: 'color',
+            value: v.color,
+            colorCode: v.color_code || '#2563eb'
+          };
+          parsedTags.push(matchedColorTag);
+        } else if (v.color_code && matchedColorTag.colorCode === '#2563eb') {
+          matchedColorTag.colorCode = v.color_code;
+        }
+        vTagIds.push(matchedColorTag.id);
+      }
+
+      // 2. Xử lý RAM / ROM
+      if (v.ram || v.storage) {
+        const combined = `${v.ram || ''}/${v.storage || ''}`;
+        let matchedRamRomTag = parsedTags.find(t => t.type === 'ram_rom' && t.value === combined);
+        if (!matchedRamRomTag) {
+          const tagId = `ramrom-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+          matchedRamRomTag = {
+            id: tagId,
+            type: 'ram_rom',
+            value: combined
+          };
+          parsedTags.push(matchedRamRomTag);
+        }
+        vTagIds.push(matchedRamRomTag.id);
+      }
+
+      // 3. Xử lý Tình trạng
+      if (v.condition) {
+        let matchedCondTag = parsedTags.find(t => t.type === 'condition' && t.value.toLowerCase() === v.condition.toLowerCase());
+        if (!matchedCondTag) {
+          const tagId = `condition-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+          const newCondTag: VariantTag = {
+            id: tagId,
+            type: 'condition',
+            value: v.condition
+          };
+          parsedTags.push(newCondTag);
+          matchedCondTag = newCondTag;
+        }
+        if (matchedCondTag) {
+          vTagIds.push(matchedCondTag.id);
+        }
+      }
+
+      // 4. Tạo VariantSpec
+      parsedSpecs.push({
+        id: `variant-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+        price: String(v.price || ''),
+        tagIds: vTagIds,
+        image: v.image || ''
+      });
+    });
+
+    setAvailableTags(parsedTags);
+    setVariantSpecs(parsedSpecs);
+    setSelectedVariantIdx(0);
+    setNewTagType('color');
+    setNewColorName('');
+    setNewColorCode('#2563eb');
+    setNewRamVal('');
+    setNewRomVal('');
 
     // Parse specs object sang key-value (lọc bỏ các key nội bộ)
     const INTERNAL_KEYS = new Set(['original_link','ratings_count','color_options','color_images','variants','ram','storage']);
@@ -689,6 +894,35 @@ export default function AdminPage() {
       .map(([key, value]) => ({ key, value: String(value) }));
     setSpecRows(rows);
     setModalOpen(true);
+  };
+
+  // Thêm nhanh 4 màu mẫu
+  const handleAddSampleColors = () => {
+    const samples = [
+      { name: 'Đen Huyền Bí', image: 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=600' },
+      { name: 'Trắng Ngọc Trai', image: 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=600' },
+      { name: 'Titan Sa Mạc', image: 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=600' },
+      { name: 'Xanh Tinh Vân', image: 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=600' },
+    ];
+    const newColors = [...colorRows];
+    samples.forEach(s => {
+      if (!newColors.some(c => c.name.toLowerCase() === s.name.toLowerCase())) {
+        newColors.push(s);
+      }
+    });
+    setColorRows(newColors);
+  };
+
+  // Thêm nhanh 3 cấu hình mẫu
+  const handleAddSampleRamRoms = () => {
+    const samples = ['8GB/256GB', '12GB/512GB', '16GB/1TB'];
+    const newRrs = [...ramRoms];
+    samples.forEach(s => {
+      if (!newRrs.includes(s)) {
+        newRrs.push(s);
+      }
+    });
+    setRamRoms(newRrs);
   };
 
   // Quản lý spec rows động trong form sản phẩm
@@ -2003,81 +2237,964 @@ export default function AdminPage() {
               </button>
             </div>
 
-            {/* Tìm kiếm & Bộ lọc */}
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="relative flex-1 max-w-sm">
-                <input
-                  type="text"
-                  placeholder="Tìm tên hoặc thương hiệu..."
-                  value={prodSearch}
-                  onChange={(e) => setProdSearch(e.target.value)}
-                  className="w-full h-10 pl-10 pr-4 rounded-xl border border-border bg-background text-foreground placeholder-muted-foreground/60 text-sm focus:outline-none focus:border-primary"
-                />
-                <Search className="absolute left-3.5 top-3 w-4 h-4 text-muted-foreground" />
-              </div>
-              <select
-                value={prodFilterCategory}
-                onChange={(e) => setProdFilterCategory(e.target.value)}
-                className="h-10 px-4 rounded-xl border border-border bg-background text-foreground text-sm focus:outline-none focus:border-primary cursor-pointer"
-              >
-                <option value="">-- Tất cả danh mục --</option>
-                {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-              </select>
-            </div>
+            {/* Tìm kiếm & Bộ lọc + Bảng + Phân trang bọc trong layout Split View */}
+            {(() => {
+              const ADMIN_ITEMS_PER_PAGE = 20;
+              const totalProdPages = Math.ceil(filteredProducts.length / ADMIN_ITEMS_PER_PAGE);
+              const startIdx = (prodCurrentPage - 1) * ADMIN_ITEMS_PER_PAGE;
+              const currentAdminProducts = filteredProducts.slice(startIdx, startIdx + ADMIN_ITEMS_PER_PAGE);
+              
+              const getAdminPageNumbers = () => {
+                const pages: (number | string)[] = [];
+                const maxVisible = 5;
+                if (totalProdPages <= maxVisible) {
+                  for (let i = 1; i <= totalProdPages; i++) pages.push(i);
+                } else {
+                  if (prodCurrentPage <= 3) {
+                    pages.push(1, 2, 3, 4, '...', totalProdPages);
+                  } else if (prodCurrentPage >= totalProdPages - 2) {
+                    pages.push(1, '...', totalProdPages - 3, totalProdPages - 2, totalProdPages - 1, totalProdPages);
+                  } else {
+                    pages.push(1, '...', prodCurrentPage - 1, prodCurrentPage, prodCurrentPage + 1, '...', totalProdPages);
+                  }
+                }
+                return pages;
+              };
 
-            {/* Bảng sản phẩm */}
-            <div className="rounded-2xl border border-border overflow-hidden overflow-x-auto">
-              <table className="w-full text-sm min-w-[720px]">
-                <thead className="bg-muted/50 text-muted-foreground text-xs uppercase">
-                  <tr>
-                    <th className="text-left font-semibold px-4 py-3">Sản phẩm</th>
-                    <th className="text-left font-semibold px-4 py-3">Danh mục</th>
-                    <th className="text-right font-semibold px-4 py-3">Giá</th>
-                    <th className="text-right font-semibold px-4 py-3">Tồn kho</th>
-                    <th className="text-right font-semibold px-4 py-3">Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {filteredProducts.map((p) => (
-                    <tr key={p.id} className="hover:bg-muted/30 transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-background border border-border p-1 flex items-center justify-center flex-shrink-0">
-                            <img src={p.images?.[0]} alt={p.name} className="w-full h-full object-contain" />
+              return (
+                <div className="flex flex-col lg:flex-row gap-6 items-start relative w-full">
+                  {/* CỘT TRÁI: DANH SÁCH SẢN PHẨM */}
+                  <div className={`space-y-4 transition-all duration-300 ${modalOpen ? 'flex-1 min-w-0' : 'w-full'}`}>
+                    {/* Tìm kiếm & Bộ lọc */}
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <div className="relative flex-1 max-w-sm">
+                        <input
+                          type="text"
+                          placeholder="Tìm tên hoặc thương hiệu..."
+                          value={prodSearch}
+                          onChange={(e) => setProdSearch(e.target.value)}
+                          className="w-full h-10 pl-10 pr-4 rounded-xl border border-border bg-background text-foreground placeholder-muted-foreground/60 text-sm focus:outline-none focus:border-primary"
+                        />
+                        <Search className="absolute left-3.5 top-3 w-4 h-4 text-muted-foreground" />
+                      </div>
+                      
+                      <div className="relative" ref={catDropdownRef}>
+                        <button
+                          type="button"
+                          onClick={() => setIsCatDropdownOpen(!isCatDropdownOpen)}
+                          className={`h-10 px-4 rounded-xl border text-sm flex items-center justify-between gap-1.5 cursor-pointer transition-all ${
+                            isCatDropdownOpen || prodFilterCategory
+                              ? 'border-primary bg-primary/5 text-foreground'
+                              : 'border-border bg-card text-muted-foreground hover:text-foreground hover:border-muted-foreground/35'
+                          }`}
+                        >
+                          <span>{prodFilterCategory ? (CATEGORIES.find(c => c.value === prodFilterCategory)?.label || prodFilterCategory) : '-- Tất cả danh mục --'}</span>
+                          <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isCatDropdownOpen ? 'rotate-180' : ''}`} />
+                        </button>
+                        
+                        {isCatDropdownOpen && (
+                          <div className="absolute top-[calc(100%+4px)] left-0 w-56 bg-card border border-border rounded-xl shadow-2xl p-1.5 z-40 animate-in fade-in slide-in-from-top-1 duration-150">
+                            <div className="max-h-48 overflow-y-auto pr-1 custom-scroll space-y-0.5">
+                              <div
+                                onClick={() => {
+                                  setProdFilterCategory('');
+                                  setIsCatDropdownOpen(false);
+                                }}
+                                className={`px-3 py-2 rounded-lg text-xs cursor-pointer transition-colors ${
+                                  !prodFilterCategory ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-muted/60 text-muted-foreground hover:text-foreground'
+                                }`}
+                              >
+                                -- Tất cả danh mục --
+                              </div>
+                              {CATEGORIES.map((c) => (
+                                <div
+                                  key={c.value}
+                                  onClick={() => {
+                                    setProdFilterCategory(c.value);
+                                    setIsCatDropdownOpen(false);
+                                  }}
+                                  className={`px-3 py-2 rounded-lg text-xs cursor-pointer transition-colors ${
+                                    prodFilterCategory === c.value ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-muted/60 text-muted-foreground hover:text-foreground'
+                                  }`}
+                                >
+                                  {c.label}
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                          <div>
-                            <p className="font-semibold text-foreground line-clamp-1">{p.name}</p>
-                            <p className="text-xs text-muted-foreground">{p.brand}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Bảng sản phẩm */}
+                    <div className="rounded-2xl border border-border overflow-hidden overflow-x-auto">
+                      <table className="w-full text-sm min-w-[500px]">
+                        <thead className="bg-muted/50 text-muted-foreground text-xs uppercase">
+                          <tr>
+                            <th className="text-left font-semibold px-4 py-3">Sản phẩm</th>
+                            {!modalOpen && <th className="text-left font-semibold px-4 py-3">Danh mục</th>}
+                            <th className="text-right font-semibold px-4 py-3">Giá</th>
+                            {!modalOpen && <th className="text-right font-semibold px-4 py-3">Tồn kho</th>}
+                            <th className="text-right font-semibold px-4 py-3">Thao tác</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {currentAdminProducts.map((p) => (
+                            <tr key={p.id} className={`hover:bg-muted/30 transition-colors ${editingProduct?.id === p.id && modalOpen ? 'bg-primary/5 border-l-2 border-l-primary' : ''}`}>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-lg bg-background border border-border p-1 flex items-center justify-center flex-shrink-0">
+                                    <img src={p.images?.[0]} alt={p.name} className="w-full h-full object-contain" />
+                                  </div>
+                                  <div>
+                                    <p className="font-semibold text-foreground line-clamp-1">{p.name}</p>
+                                    <p className="text-xs text-muted-foreground">{p.brand}</p>
+                                  </div>
+                                </div>
+                              </td>
+                              {!modalOpen && (
+                                <td className="px-4 py-3">
+                                  <span className="inline-block px-2.5 py-1 text-[10px] font-black uppercase tracking-wider bg-secondary text-muted-foreground border border-border rounded-lg">
+                                    {p.category}
+                                  </span>
+                                </td>
+                              )}
+                              <td className="px-4 py-3 text-right font-bold text-foreground">
+                                {formatPrice(p.price)}
+                              </td>
+                              {!modalOpen && (
+                                <td className="px-4 py-3 text-right">
+                                  <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-bold ${
+                                    p.stock > 10
+                                      ? 'bg-success/10 text-success'
+                                      : p.stock > 0
+                                      ? 'bg-amber-500/10 text-amber-500'
+                                      : 'bg-destructive/10 text-destructive'
+                                  }`}>
+                                    <span>{p.stock}</span>
+                                    <span className="text-[10px] font-normal text-muted-foreground">sp</span>
+                                  </span>
+                                </td>
+                              )}
+                              <td className="px-4 py-3">
+                                <div className="flex items-center justify-end gap-2">
+                                  <button onClick={() => openEditProduct(p)} className="p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors cursor-pointer" title="Sửa">
+                                    <Pencil className="w-4 h-4" />
+                                  </button>
+                                  <button onClick={() => handleDeleteProduct(p)} className="p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer" title="Xóa">
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                          {filteredProducts.length === 0 && (
+                            <tr>
+                              <td colSpan={modalOpen ? 3 : 5} className="px-4 py-10 text-center text-muted-foreground text-sm">Không có sản phẩm nào.</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* PHÂN TRANG ADMIN PRODUCTS */}
+                    {totalProdPages > 1 && (
+                      <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t border-border/40 select-none">
+                        <button
+                          type="button"
+                          onClick={() => setProdCurrentPage(prev => Math.max(prev - 1, 1))}
+                          disabled={prodCurrentPage === 1}
+                          className="flex items-center justify-center w-9 h-9 rounded-lg border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:hover:bg-card disabled:hover:text-muted-foreground transition-all cursor-pointer"
+                          title="Trang trước"
+                        >
+                          <ChevronLeft className="w-4.5 h-4.5" />
+                        </button>
+                        
+                        <div className="flex items-center gap-1">
+                          {getAdminPageNumbers().map((page, index) => {
+                            if (page === '...') {
+                              return (
+                                <span key={`admin-dots-${index}`} className="w-9 h-9 flex items-center justify-center text-muted-foreground font-bold select-none text-xs">
+                                  ...
+                                </span>
+                              );
+                            }
+                            return (
+                              <button
+                                key={`admin-page-${page}`}
+                                type="button"
+                                onClick={() => setProdCurrentPage(Number(page))}
+                                className={`w-9 h-9 rounded-lg text-xs font-black transition-all cursor-pointer border ${
+                                  prodCurrentPage === page
+                                    ? 'bg-primary border-primary text-primary-foreground shadow-sm shadow-primary/20 scale-105'
+                                    : 'bg-card border-border text-muted-foreground hover:text-foreground hover:bg-muted'
+                                }`}
+                              >
+                                {page}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setProdCurrentPage(prev => Math.min(prev + 1, totalProdPages))}
+                          disabled={prodCurrentPage === totalProdPages}
+                          className="flex items-center justify-center w-9 h-9 rounded-lg border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:hover:bg-card disabled:hover:text-muted-foreground transition-all cursor-pointer"
+                          title="Trang sau"
+                        >
+                          <ChevronRight className="w-4.5 h-4.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* CỘT PHẢI: FORM CHỈNH SỬA / THÊM MỚI SẢN PHẨM (STICKY SIDEBAR) */}
+                  {modalOpen && (
+                    <div className="w-full lg:w-[480px] xl:w-[500px] bg-card border border-border rounded-2xl shadow-2xl p-5 sticky top-6 max-h-[calc(100vh-160px)] overflow-y-auto custom-scroll animate-in slide-in-from-right duration-300 flex-shrink-0">
+                      <div className="flex items-center justify-between pb-3 border-b border-border mb-4">
+                        <h2 className="text-sm font-bold text-foreground">{editingProduct ? 'Sửa thông tin sản phẩm' : 'Thêm sản phẩm mới'}</h2>
+                        <button onClick={() => setModalOpen(false)} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <form onSubmit={handleSaveProduct} className="space-y-4 text-xs">
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-bold text-muted-foreground">Tên sản phẩm</label>
+                          <input
+                            required
+                            value={formProduct.name}
+                            onChange={(e) => setFormProduct({ ...formProduct, name: e.target.value })}
+                            placeholder="Ví dụ: iPhone 15 Pro Max 256GB"
+                            className="w-full h-10 px-3 rounded-xl border border-border bg-background text-foreground text-xs focus:outline-none focus:border-primary transition-colors"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] font-bold text-muted-foreground">Thương hiệu</label>
+                            <input
+                              required
+                              value={formProduct.brand}
+                              onChange={(e) => setFormProduct({ ...formProduct, brand: e.target.value })}
+                              placeholder="Ví dụ: Apple"
+                              className="w-full h-10 px-3 rounded-xl border border-border bg-background text-foreground text-xs focus:outline-none focus:border-primary transition-colors"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] font-bold text-muted-foreground">Danh mục</label>
+                            <div className="relative" ref={formCatRef}>
+                              <button
+                                type="button"
+                                onClick={() => setIsFormCatOpen(!isFormCatOpen)}
+                                className="w-full h-10 px-3 rounded-xl border border-border bg-background text-foreground text-xs focus:outline-none focus:border-primary cursor-pointer transition-colors flex items-center justify-between"
+                              >
+                                <span>{CATEGORIES.find(c => c.value === formProduct.category)?.label || 'Chọn danh mục'}</span>
+                                <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 ${isFormCatOpen ? 'rotate-180' : ''}`} />
+                              </button>
+
+                              {isFormCatOpen && (
+                                <div className="absolute left-0 right-0 mt-1 z-30 bg-card border border-border rounded-xl shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
+                                  <div className="max-h-48 overflow-y-auto custom-scroll p-1 space-y-0.5">
+                                    {CATEGORIES.map((c) => (
+                                      <button
+                                        key={c.value}
+                                        type="button"
+                                        onClick={() => {
+                                          setFormProduct({ ...formProduct, category: c.value });
+                                          setIsFormCatOpen(false);
+                                        }}
+                                        className={`w-full text-left px-3 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                                          formProduct.category === c.value
+                                            ? 'bg-primary/10 text-primary'
+                                            : 'hover:bg-muted text-foreground'
+                                        }`}
+                                      >
+                                        {c.label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-primary/10 text-primary capitalize">{p.category}</span>
-                      </td>
-                      <td className="px-4 py-3 text-right font-semibold text-foreground whitespace-nowrap">{formatPrice(p.price)}</td>
-                      <td className="px-4 py-3 text-right">
-                        <span className={`font-semibold ${p.stock > 0 ? 'text-foreground' : 'text-destructive font-bold'}`}>{p.stock}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-2">
-                          <button onClick={() => openEditProduct(p)} className="p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors cursor-pointer" title="Sửa">
-                            <Pencil className="w-4 h-4" />
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] font-bold text-muted-foreground">Giá niêm yết (VNĐ)</label>
+                            <input
+                              type="number"
+                              required
+                              value={formProduct.price}
+                              onChange={(e) => setFormProduct({ ...formProduct, price: Number(e.target.value) })}
+                              placeholder="Giá VNĐ..."
+                              className="w-full h-10 px-3 rounded-xl border border-border bg-background text-foreground text-xs focus:outline-none focus:border-primary transition-colors"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] font-bold text-muted-foreground">Tồn kho</label>
+                            <input
+                              type="number"
+                              required
+                              value={formProduct.stock}
+                              onChange={(e) => setFormProduct({ ...formProduct, stock: Number(e.target.value) })}
+                              placeholder="Số lượng..."
+                              className="w-full h-10 px-3 rounded-xl border border-border bg-background text-foreground text-xs focus:outline-none focus:border-primary transition-colors"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-bold text-muted-foreground">Địa chỉ URL ảnh</label>
+                          <input
+                            required
+                            value={formProduct.images?.[0] || ''}
+                            onChange={(e) => setFormProduct({ ...formProduct, images: [e.target.value] })}
+                            placeholder="https://images.unsplash.com/..."
+                            className="w-full h-10 px-3 rounded-xl border border-border bg-background text-foreground text-xs focus:outline-none focus:border-primary transition-colors"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-bold text-muted-foreground">Mô tả sản phẩm</label>
+                          <textarea
+                            rows={3}
+                            value={formProduct.description}
+                            onChange={(e) => setFormProduct({ ...formProduct, description: e.target.value })}
+                            placeholder="Nhập mô tả..."
+                            className="w-full p-3 rounded-xl border border-border bg-background text-foreground text-xs focus:outline-none focus:border-primary resize-none transition-colors"
+                          />
+                        </div>
+
+                        {/* KHO THẺ THUỘC TÍNH (TAGS POOL) */}
+                        <div className="space-y-3 border-t border-border pt-3 text-xs">
+                          <div className="flex justify-between items-center">
+                            <label className="text-[11px] font-bold text-muted-foreground flex items-center gap-1.5">
+                              <span>🏷️ Kho thẻ thuộc tính (Tags Pool)</span>
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const samples = [
+                                  { type: 'color', value: 'Đen Graphite', colorCode: '#1c1d21' },
+                                  { type: 'color', value: 'Trắng Ngọc Trai', colorCode: '#f3f4f6' },
+                                  { type: 'color', value: 'Titan Sa Mạc', colorCode: '#c2b280' },
+                                  { type: 'color', value: 'Xanh Mint', colorCode: '#a7f3d0' },
+                                  { type: 'ram_rom', value: '8GB/256GB' },
+                                  { type: 'ram_rom', value: '12GB/512GB' },
+                                  { type: 'ram_rom', value: '16GB/1TB' },
+                                  { type: 'condition', value: 'Mới 100%' },
+                                  { type: 'condition', value: 'Likenew 99%' },
+                                  { type: 'condition', value: 'Cũ 95%' },
+                                  { type: 'condition', value: 'Nhập khẩu' },
+                                  { type: 'condition', value: 'Trôi bảo hành' },
+                                  { type: 'condition', value: 'Hàng cũ' }
+                                ];
+                                const newTags = [...availableTags];
+                                samples.forEach(s => {
+                                  if (!newTags.some(t => t.type === s.type && t.value.toLowerCase() === s.value.toLowerCase())) {
+                                    newTags.push({
+                                      id: `${s.type}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                                      type: s.type as any,
+                                      value: s.value,
+                                      colorCode: s.colorCode
+                                    });
+                                  }
+                                });
+                                setAvailableTags(newTags);
+                              }}
+                              className="text-[9px] font-bold text-primary hover:underline px-1.5 py-0.5 bg-primary/10 rounded cursor-pointer"
+                            >
+                              + Thêm mẫu nhanh
+                            </button>
+                          </div>
+
+                          <div className="bg-muted/30 p-2.5 rounded-xl border border-border/40 space-y-2">
+                            <div className="flex gap-2">
+                              <span className="font-semibold text-muted-foreground text-[10px] self-center">Tạo thẻ:</span>
+                              <div className="flex gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setNewTagType('color')}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors cursor-pointer ${
+                                    newTagType === 'color' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground'
+                                  }`}
+                                >
+                                  🎨 Màu sắc
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setNewTagType('ram_rom')}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors cursor-pointer ${
+                                    newTagType === 'ram_rom' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground'
+                                  }`}
+                                >
+                                  ⚙️ RAM / ROM
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setNewTagType('condition')}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors cursor-pointer ${
+                                    newTagType === 'condition' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground'
+                                  }`}
+                                >
+                                  📦 Tình trạng
+                                </button>
+                              </div>
+                            </div>
+
+                            {newTagType === 'color' && (
+                              <div className="flex gap-1.5 items-center">
+                                <input
+                                  type="text"
+                                  placeholder="Màu (vd: Xanh Tinh Vân)..."
+                                  value={newColorName}
+                                  onChange={(e) => setNewColorName(e.target.value)}
+                                  className="flex-1 h-8 px-2 rounded-lg border border-border bg-background text-foreground text-xs focus:outline-none focus:border-primary"
+                                />
+                                <div className="flex items-center gap-1 border border-border bg-background rounded-lg px-1.5 h-8">
+                                  <input
+                                    type="color"
+                                    value={newColorCode}
+                                    onChange={(e) => setNewColorCode(e.target.value)}
+                                    className="w-4 h-4 border-0 bg-transparent cursor-pointer rounded"
+                                  />
+                                  <span className="text-[9px] font-mono text-muted-foreground">{newColorCode.toUpperCase()}</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (newColorName.trim()) {
+                                      const id = `color-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+                                      setAvailableTags([...availableTags, { id, type: 'color', value: newColorName.trim(), colorCode: newColorCode }]);
+                                      setNewColorName('');
+                                    }
+                                  }}
+                                  className="px-2.5 h-8 bg-primary hover:opacity-90 text-primary-foreground text-xs font-bold rounded-lg cursor-pointer"
+                                >
+                                  Tạo
+                                </button>
+                              </div>
+                            )}
+
+                            {newTagType === 'ram_rom' && (
+                              <div className="flex gap-1.5 items-center">
+                                <input
+                                  type="text"
+                                  placeholder="RAM (vd: 12GB)..."
+                                  value={newRamVal}
+                                  onChange={(e) => setNewRamVal(e.target.value)}
+                                  className="w-20 h-8 px-2 rounded-lg border border-border bg-background text-foreground text-xs focus:outline-none focus:border-primary"
+                                />
+                                <span className="text-muted-foreground">/</span>
+                                <input
+                                  type="text"
+                                  placeholder="ROM (vd: 512GB)..."
+                                  value={newRomVal}
+                                  onChange={(e) => setNewRomVal(e.target.value)}
+                                  className="w-20 h-8 px-2 rounded-lg border border-border bg-background text-foreground text-xs focus:outline-none focus:border-primary"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (newRamVal.trim() || newRomVal.trim()) {
+                                      const combined = `${newRamVal.trim()}/${newRomVal.trim()}`;
+                                      const id = `ramrom-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+                                      setAvailableTags([...availableTags, { id, type: 'ram_rom', value: combined }]);
+                                      setNewRamVal('');
+                                      setNewRomVal('');
+                                    }
+                                  }}
+                                  className="px-2.5 h-8 bg-primary hover:opacity-90 text-primary-foreground text-xs font-bold rounded-lg cursor-pointer"
+                                >
+                                  Tạo
+                                </button>
+                              </div>
+                            )}
+
+                            {newTagType === 'condition' && (
+                              <div className="space-y-2">
+                                <div className="flex gap-1.5 items-center">
+                                  <input
+                                    type="text"
+                                    placeholder="Tình trạng (vd: Likenew 99%)..."
+                                    value={newConditionVal}
+                                    onChange={(e) => setNewConditionVal(e.target.value)}
+                                    className="flex-1 h-8 px-2 rounded-lg border border-border bg-background text-foreground text-xs focus:outline-none focus:border-primary"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (newConditionVal.trim()) {
+                                        const id = `condition-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+                                        if (!availableTags.some(t => t.type === 'condition' && t.value.toLowerCase() === newConditionVal.trim().toLowerCase())) {
+                                          setAvailableTags([...availableTags, { id, type: 'condition', value: newConditionVal.trim() }]);
+                                        }
+                                        setNewConditionVal('');
+                                      }
+                                    }}
+                                    className="px-2.5 h-8 bg-primary hover:opacity-90 text-primary-foreground text-xs font-bold rounded-lg cursor-pointer"
+                                  >
+                                    Tạo
+                                  </button>
+                                </div>
+
+                                <div className="space-y-1">
+                                  <span className="text-[9px] font-bold text-muted-foreground block">Chọn nhanh tình trạng:</span>
+                                  <div className="flex gap-1 overflow-x-auto pb-1 pt-0.5 custom-scroll scroll-smooth">
+                                    {[
+                                      'Mới 100%',
+                                      'Likenew 99%',
+                                      'Cũ 95%',
+                                      'Cũ 90%',
+                                      'Nhập khẩu',
+                                      'Chính hãng',
+                                      'Trôi bảo hành',
+                                      'Hàng cũ',
+                                      'Refurbished'
+                                    ].map((opt) => (
+                                      <button
+                                        key={opt}
+                                        type="button"
+                                        onClick={() => {
+                                          const id = `condition-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+                                          if (!availableTags.some(t => t.type === 'condition' && t.value.toLowerCase() === opt.toLowerCase())) {
+                                            setAvailableTags([...availableTags, { id, type: 'condition', value: opt }]);
+                                          }
+                                        }}
+                                        className="px-2 py-0.5 rounded bg-background hover:bg-muted text-[9px] text-foreground border border-border font-bold transition-colors cursor-pointer flex-shrink-0"
+                                      >
+                                        + {opt}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Hiển thị các tag trong kho theo phân nhóm danh mục thẻ */}
+                          <div className="space-y-2 py-1 max-h-36 overflow-y-auto pr-1 custom-scroll">
+                            {availableTags.length === 0 ? (
+                              <span className="text-xs text-muted-foreground italic">Kho thẻ trống. Nhấp thêm mẫu nhanh hoặc tự tạo thẻ ở trên.</span>
+                            ) : (
+                              <>
+                                {/* Nhóm Màu sắc */}
+                                {availableTags.some(t => t.type === 'color') && (
+                                  <div className="space-y-1">
+                                    <div className="text-[9px] font-bold text-muted-foreground uppercase tracking-wide">🎨 Màu sắc:</div>
+                                    <div className="flex flex-wrap gap-1">
+                                      {availableTags.filter(t => t.type === 'color').map((tag) => (
+                                        <div
+                                          key={tag.id}
+                                          draggable
+                                          onDragStart={(e) => {
+                                            e.dataTransfer.setData('text/plain', tag.id);
+                                          }}
+                                          className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-secondary text-foreground text-[10px] rounded border border-border font-bold select-none cursor-grab active:cursor-grabbing hover:bg-muted transition-colors"
+                                          title="Kéo thả thẻ này vào ô phiên bản bên dưới hoặc click chọn trong dòng"
+                                        >
+                                          {tag.colorCode && (
+                                            <span className="w-1.5 h-1.5 rounded-full border border-border/20" style={{ backgroundColor: tag.colorCode }} />
+                                          )}
+                                          <span>{tag.value}</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setAvailableTags(availableTags.filter(t => t.id !== tag.id));
+                                              setVariantSpecs(variantSpecs.map(vs => ({
+                                                ...vs,
+                                                tagIds: vs.tagIds.filter(id => id !== tag.id)
+                                              })));
+                                            }}
+                                            className="text-muted-foreground hover:text-destructive font-bold text-[8px] ml-1"
+                                          >
+                                            ✕
+                                          </button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Nhóm RAM/ROM */}
+                                {availableTags.some(t => t.type === 'ram_rom') && (
+                                  <div className="space-y-1 mt-1.5">
+                                    <div className="text-[9px] font-bold text-muted-foreground uppercase tracking-wide">⚙️ RAM / ROM:</div>
+                                    <div className="flex flex-wrap gap-1">
+                                      {availableTags.filter(t => t.type === 'ram_rom').map((tag) => (
+                                        <div
+                                          key={tag.id}
+                                          draggable
+                                          onDragStart={(e) => {
+                                            e.dataTransfer.setData('text/plain', tag.id);
+                                          }}
+                                          className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-secondary text-foreground text-[10px] rounded border border-border font-bold select-none cursor-grab active:cursor-grabbing hover:bg-muted transition-colors"
+                                          title="Kéo thả thẻ này vào ô phiên bản bên dưới"
+                                        >
+                                          <span>{tag.value}</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setAvailableTags(availableTags.filter(t => t.id !== tag.id));
+                                              setVariantSpecs(variantSpecs.map(vs => ({
+                                                ...vs,
+                                                tagIds: vs.tagIds.filter(id => id !== tag.id)
+                                              })));
+                                            }}
+                                            className="text-muted-foreground hover:text-destructive font-bold text-[8px] ml-1"
+                                          >
+                                            ✕
+                                          </button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                {/* Nhóm Tình trạng */}
+                                {availableTags.some(t => t.type === 'condition') && (
+                                  <div className="space-y-1 mt-1.5">
+                                    <div className="text-[9px] font-bold text-muted-foreground uppercase tracking-wide">📦 Tình trạng / Phân loại:</div>
+                                    <div className="flex flex-wrap gap-1">
+                                      {availableTags.filter(t => t.type === 'condition').map((tag) => (
+                                        <div
+                                          key={tag.id}
+                                          draggable
+                                          onDragStart={(e) => {
+                                            e.dataTransfer.setData('text/plain', tag.id);
+                                          }}
+                                          className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-secondary text-foreground text-[10px] rounded border border-border font-bold select-none cursor-grab active:cursor-grabbing hover:bg-muted transition-colors"
+                                          title="Kéo thả thẻ này vào ô phiên bản bên dưới"
+                                        >
+                                          <span>{tag.value}</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setAvailableTags(availableTags.filter(t => t.id !== tag.id));
+                                              setVariantSpecs(variantSpecs.map(vs => ({
+                                                ...vs,
+                                                tagIds: vs.tagIds.filter(id => id !== tag.id)
+                                              })));
+                                            }}
+                                            className="text-muted-foreground hover:text-destructive font-bold text-[8px] ml-1"
+                                          >
+                                            ✕
+                                          </button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* PHIÊN BẢN SẢN PHẨM & GHI GIÁ */}
+                        <div className="space-y-3 border-t border-border pt-3 text-xs">
+                          <div className="flex justify-between items-center">
+                            <label className="text-[11px] font-bold text-muted-foreground">⚙️ Phiên bản sản phẩm</label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const id = `variant-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+                                const newSpecs = [...variantSpecs, { id, price: '', tagIds: [] }];
+                                setVariantSpecs(newSpecs);
+                                setSelectedVariantIdx(newSpecs.length - 1);
+                              }}
+                              className="flex items-center gap-1 text-[10px] font-bold text-primary hover:underline cursor-pointer"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>Tạo phiên bản</span>
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-12 gap-3 border border-border/50 rounded-xl p-2 bg-muted/10 min-h-64">
+                            {/* Cột trái: Chọn phiên bản */}
+                            <div className="col-span-4 border-r border-border/40 pr-2 flex flex-col gap-1.5 max-h-72 overflow-y-auto custom-scroll">
+                              {variantSpecs.length === 0 ? (
+                                <p className="text-[10px] text-muted-foreground italic text-center py-8">
+                                  Chưa có phiên bản
+                                </p>
+                              ) : (
+                                variantSpecs.map((vs, idx) => {
+                                  // Lấy tên tóm tắt phiên bản để render lên tab
+                                  const tags = vs.tagIds.map(tid => availableTags.find(t => t.id === tid)).filter(Boolean) as VariantTag[];
+                                  const colorTag = tags.find(t => t.type === 'color');
+                                  const ramRomTag = tags.find(t => t.type === 'ram_rom');
+                                  const condTag = tags.find(t => t.type === 'condition');
+                                  
+                                  const colorVal = colorTag ? colorTag.value : '';
+                                  const ramRomVal = ramRomTag ? ramRomTag.value : '';
+                                  const condVal = condTag ? condTag.value : '';
+                                  const labelParts = [];
+                                  if (colorVal) labelParts.push(colorVal);
+                                  if (ramRomVal) labelParts.push(ramRomVal);
+                                  if (condVal) labelParts.push(condVal);
+                                  const summary = labelParts.length > 0 ? labelParts.join(' / ') : `Phiên bản #${idx + 1}`;
+
+                                  return (
+                                    <button
+                                      key={vs.id}
+                                      type="button"
+                                      onClick={() => setSelectedVariantIdx(idx)}
+                                      className={`w-full text-left p-2 rounded-lg text-[10px] font-bold transition-all relative border flex flex-col gap-0.5 cursor-pointer ${
+                                        selectedVariantIdx === idx
+                                          ? 'bg-primary/10 border-primary text-primary shadow-sm'
+                                          : 'bg-card border-border/60 hover:bg-muted text-foreground'
+                                      }`}
+                                    >
+                                      <span className={selectedVariantIdx === idx ? 'text-primary/75 text-[9px]' : 'text-muted-foreground text-[9px]'}>
+                                        # {idx + 1}
+                                      </span>
+                                      <span className="truncate w-full block">{summary}</span>
+                                      {vs.price && (
+                                        <span className="text-[8px] font-normal text-muted-foreground mt-0.5">
+                                          {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(Number(vs.price))}
+                                        </span>
+                                      )}
+                                    </button>
+                                  );
+                                })
+                              )}
+                            </div>
+
+                            {/* Cột phải: Form chi tiết phiên bản đang chọn */}
+                            <div className="col-span-8 flex flex-col justify-between">
+                              {variantSpecs.length === 0 ? (
+                                <div className="h-full flex flex-col items-center justify-center text-center p-4">
+                                  <p className="text-xs text-muted-foreground italic">
+                                    Bấm "+ Tạo phiên bản" để thêm cấu hình mới cho sản phẩm.
+                                  </p>
+                                </div>
+                              ) : (
+                                (() => {
+                                  // Bảo vệ fallback index
+                                  const currentIdx = selectedVariantIdx >= variantSpecs.length ? variantSpecs.length - 1 : selectedVariantIdx;
+                                  const vs = variantSpecs[currentIdx];
+                                  if (!vs) return null;
+
+                                  const tags = vs.tagIds.map(tid => availableTags.find(t => t.id === tid)).filter(Boolean) as VariantTag[];
+                                  const colorTag = tags.find(t => t.type === 'color');
+                                  const ramRomTag = tags.find(t => t.type === 'ram_rom');
+                                  const condTag = tags.find(t => t.type === 'condition');
+                                  const colorVal = colorTag ? colorTag.value : '';
+                                  const ramRomVal = ramRomTag ? ramRomTag.value : '';
+                                  const condVal = condTag ? condTag.value : '';
+                                  const labelParts = [];
+                                  if (colorVal) labelParts.push(colorVal);
+                                  if (ramRomVal) labelParts.push(ramRomVal);
+                                  if (condVal) labelParts.push(condVal);
+                                  const finalLabel = labelParts.length > 0 ? labelParts.join(' - ') : 'Phiên bản chưa gán thuộc tính';
+
+                                  return (
+                                    <div className="space-y-3 p-1 animate-in fade-in duration-150 h-full flex flex-col justify-between">
+                                      <div className="space-y-3">
+                                        {/* Header chi tiết phiên bản */}
+                                        <div className="flex justify-between items-center border-b border-border/40 pb-2">
+                                          <div>
+                                            <span className="text-[10px] font-bold text-muted-foreground">Chi tiết phiên bản #{currentIdx + 1}</span>
+                                            <h4 className="text-xs font-black text-foreground mt-0.5 truncate max-w-[150px]" title={finalLabel}>{finalLabel}</h4>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const newSpecs = variantSpecs.filter(item => item.id !== vs.id);
+                                              setVariantSpecs(newSpecs);
+                                              setSelectedVariantIdx(Math.max(0, currentIdx - 1));
+                                            }}
+                                            className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+                                            title="Xóa phiên bản này"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+
+                                        {/* Vùng Drop tags */}
+                                        <div className="space-y-1.5">
+                                          <label className="text-[10px] font-bold text-muted-foreground">🏷️ Tag thuộc tính đã gán:</label>
+                                          <div
+                                            onDragOver={(e) => e.preventDefault()}
+                                            onDrop={(e) => {
+                                              e.preventDefault();
+                                              const tagId = e.dataTransfer.getData('text');
+                                              if (tagId && !vs.tagIds.includes(tagId)) {
+                                                const exists = availableTags.some(t => t.id === tagId);
+                                                if (exists) {
+                                                  setVariantSpecs(variantSpecs.map((item, index) => index === currentIdx ? { ...item, tagIds: [...item.tagIds, tagId] } : item));
+                                                }
+                                              }
+                                            }}
+                                            className="border border-dashed border-border rounded-lg p-2 min-h-12 bg-background flex flex-wrap gap-1.5 items-center relative group"
+                                          >
+                                            {vs.tagIds.length === 0 ? (
+                                              <span className="text-[10px] text-muted-foreground/60 italic w-full text-center py-1 pointer-events-none">
+                                                Kéo thả tag ở trên vào hoặc chọn →
+                                              </span>
+                                            ) : (
+                                              vs.tagIds.map(tid => {
+                                                const tag = availableTags.find(t => t.id === tid);
+                                                if (!tag) return null;
+                                                return (
+                                                  <span
+                                                    key={tid}
+                                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-primary/10 border border-primary/20 text-primary text-[10px] rounded font-bold animate-in fade-in zoom-in-95 duration-100"
+                                                  >
+                                                    {tag.type === 'color' && tag.colorCode && (
+                                                      <span className="w-1.5 h-1.5 rounded-full border border-border/20" style={{ backgroundColor: tag.colorCode }} />
+                                                    )}
+                                                    <span>{tag.value}</span>
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => {
+                                                        setVariantSpecs(variantSpecs.map((item, index) => index === currentIdx ? { ...item, tagIds: item.tagIds.filter(id => id !== tid) } : item));
+                                                      }}
+                                                      className="text-primary hover:text-destructive font-bold text-[8px] ml-1"
+                                                    >
+                                                      ✕
+                                                    </button>
+                                                  </span>
+                                                );
+                                              })
+                                            )}
+
+                                            {/* Dropdown chọn nhanh tag */}
+                                            <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                              <select
+                                                value=""
+                                                onChange={(e) => {
+                                                  const val = e.target.value;
+                                                  if (val && !vs.tagIds.includes(val)) {
+                                                    setVariantSpecs(variantSpecs.map((item, index) => index === currentIdx ? { ...item, tagIds: [...item.tagIds, val] } : item));
+                                                  }
+                                                }}
+                                                className="bg-card border border-border rounded px-1 py-0.5 text-[9px] cursor-pointer text-muted-foreground focus:outline-none focus:border-primary"
+                                              >
+                                                <option value="">+ Thêm nhanh</option>
+                                                {availableTags.filter(t => !vs.tagIds.includes(t.id)).map(t => (
+                                                  <option key={t.id} value={t.id}>[{t.type === 'color' ? '🎨' : t.type === 'ram_rom' ? '⚙️' : '📦'}] {t.value}</option>
+                                                ))}
+                                              </select>
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        {/* Các fields nhập */}
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <div className="space-y-1">
+                                            <label className="text-[10px] font-bold text-muted-foreground">Giá bán (VNĐ)</label>
+                                            <input
+                                              type="number"
+                                              placeholder="Giá riêng bản này..."
+                                              value={vs.price}
+                                              onChange={(e) => {
+                                                setVariantSpecs(variantSpecs.map((item, index) => index === currentIdx ? { ...item, price: e.target.value } : item));
+                                              }}
+                                              className="w-full h-8 px-2 rounded-lg border border-border bg-background text-foreground text-xs focus:outline-none focus:border-primary"
+                                            />
+                                          </div>
+                                          <div className="space-y-1">
+                                            <label className="text-[10px] font-bold text-muted-foreground">URL ảnh riêng (Tùy chọn)</label>
+                                            <input
+                                              type="text"
+                                              placeholder="https://..."
+                                              value={vs.image || ''}
+                                              onChange={(e) => {
+                                                setVariantSpecs(variantSpecs.map((item, index) => index === currentIdx ? { ...item, image: e.target.value } : item));
+                                              }}
+                                              className="w-full h-8 px-2 rounded-lg border border-border bg-background text-foreground text-xs focus:outline-none focus:border-primary"
+                                            />
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {vs.image && (
+                                        <div className="mt-2 flex items-center gap-2 border border-border/40 p-1.5 rounded-lg bg-background/50">
+                                          <img src={vs.image} alt="Variant preview" className="w-8 h-8 object-contain rounded border border-border" />
+                                          <span className="text-[9px] text-muted-foreground truncate flex-1">{vs.image}</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+
+                        {/* SPECS EDITOR (KEY-VALUE ĐỘNG) */}
+                        <div className="space-y-2 border-t border-border pt-3">
+                          <div className="flex justify-between items-center">
+                            <label className="text-[11px] font-bold text-muted-foreground">Thông số kỹ thuật (Specs)</label>
+                            <button
+                              type="button"
+                              onClick={addSpecRow}
+                              className="flex items-center gap-1 text-[10px] font-bold text-primary hover:underline cursor-pointer"
+                            >
+                              <Plus className="w-3 h-3" />
+                              <span>Thêm</span>
+                            </button>
+                          </div>
+
+                          <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                            {specRows.length === 0 ? (
+                              <p className="text-xs text-muted-foreground italic text-center">Chưa có thông số kỹ thuật.</p>
+                            ) : (
+                              specRows.map((row, idx) => (
+                                <div key={idx} className="flex gap-1.5 items-center">
+                                  <input
+                                    type="text"
+                                    placeholder="Tên (vd: CPU)"
+                                    value={row.key}
+                                    onChange={(e) => updateSpecRow(idx, 'key', e.target.value)}
+                                    className="flex-1 h-8 px-2 rounded-lg border border-border bg-background text-foreground text-xs focus:outline-none focus:border-primary"
+                                  />
+                                  <input
+                                    type="text"
+                                    placeholder="Giá trị (vd: Apple M3)"
+                                    value={row.value}
+                                    onChange={(e) => updateSpecRow(idx, 'value', e.target.value)}
+                                    className="flex-1 h-8 px-2 rounded-lg border border-border bg-background text-foreground text-xs focus:outline-none focus:border-primary"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => removeSpecRow(idx)}
+                                    className="p-1.5 rounded-lg border border-border hover:bg-rose-500/10 text-muted-foreground hover:text-rose-500 cursor-pointer transition-colors"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2 pt-4 pb-5 border-t border-border bg-card sticky bottom-0 z-10">
+                          <button
+                            type="button"
+                            onClick={() => setModalOpen(false)}
+                            className="flex-1 h-9 rounded-xl border border-border bg-background hover:bg-muted text-foreground text-xs font-semibold transition-colors cursor-pointer"
+                          >
+                            Hủy
                           </button>
-                          <button onClick={() => handleDeleteProduct(p)} className="p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer" title="Xóa">
-                            <Trash2 className="w-4 h-4" />
+                          <button
+                            type="submit"
+                            disabled={savingProduct}
+                            className="flex-1 flex items-center justify-center gap-1.5 h-9 rounded-xl bg-primary hover:opacity-90 disabled:opacity-50 text-primary-foreground text-xs font-bold shadow-md shadow-primary/15 active:scale-[0.98] transition-all cursor-pointer"
+                          >
+                            {savingProduct ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                            <span>{editingProduct ? 'Lưu thay đổi' : 'Thêm sản phẩm'}</span>
                           </button>
                         </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {filteredProducts.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-10 text-center text-muted-foreground text-sm">Không có sản phẩm nào.</td>
-                    </tr>
+                      </form>
+                    </div>
                   )}
-                </tbody>
-              </table>
-            </div>
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -2091,56 +3208,142 @@ export default function AdminPage() {
               <p className="text-xs text-muted-foreground">Theo dõi đơn hàng, địa chỉ giao hàng và trực tiếp chuyển trạng thái vận chuyển</p>
             </div>
 
-            {/* Tìm kiếm */}
-            <div className="relative max-w-sm">
-              <input
-                type="text"
-                placeholder="Tìm mã đơn hoặc địa chỉ..."
-                value={orderSearch}
-                onChange={(e) => setOrderSearch(e.target.value)}
-                className="w-full h-10 pl-10 pr-4 rounded-xl border border-border bg-background text-foreground placeholder-muted-foreground/60 text-sm focus:outline-none focus:border-primary"
-              />
-              <Search className="absolute left-3.5 top-3 w-4 h-4 text-muted-foreground" />
-            </div>
+            {/* Tìm kiếm + Bảng + Sidebar bọc trong layout Split View */}
+            <div className="flex flex-col lg:flex-row gap-6 items-start relative w-full">
+              {/* CỘT TRÁI: DANH SÁCH ĐƠN HÀNG */}
+              <div className={`space-y-4 transition-all duration-300 ${selectedOrder ? 'flex-1 min-w-0' : 'w-full'}`}>
+                {/* Tìm kiếm */}
+                <div className="relative max-w-sm">
+                  <input
+                    type="text"
+                    placeholder="Tìm mã đơn hoặc địa chỉ..."
+                    value={orderSearch}
+                    onChange={(e) => setOrderSearch(e.target.value)}
+                    className="w-full h-10 pl-10 pr-4 rounded-xl border border-border bg-background text-foreground placeholder-muted-foreground/60 text-sm focus:outline-none focus:border-primary"
+                  />
+                  <Search className="absolute left-3.5 top-3 w-4 h-4 text-muted-foreground" />
+                </div>
 
-            {/* Bảng đơn hàng */}
-            <div className="rounded-2xl border border-border overflow-hidden overflow-x-auto">
-              <table className="w-full text-sm min-w-[720px]">
-                <thead className="bg-muted/50 text-muted-foreground text-xs uppercase">
-                  <tr>
-                    <th className="text-left font-semibold px-4 py-3">Mã đơn</th>
-                    <th className="text-left font-semibold px-4 py-3">Đặt lúc</th>
-                    <th className="text-left font-semibold px-4 py-3">Địa chỉ giao</th>
-                    <th className="text-left font-semibold px-4 py-3">Trạng thái</th>
-                    <th className="text-right font-semibold px-4 py-3">Tổng tiền</th>
-                    <th className="text-right font-semibold px-4 py-3">Chi tiết</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {filteredOrders.map((o) => (
-                    <tr key={o.id} className="hover:bg-muted/30 transition-colors">
-                      <td className="px-4 py-3 font-mono text-xs font-semibold text-foreground">#{o.id.substring(0, 8)}...</td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(o.created_at)}</td>
-                      <td className="px-4 py-3 text-muted-foreground text-xs max-w-[240px] truncate">{o.shipping_address}</td>
-                      <td className="px-4 py-3">{getOrderStatusBadge(o.status)}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-foreground whitespace-nowrap">{formatPrice(o.total)}</td>
-                      <td className="px-4 py-3 text-right">
+                {/* Bảng đơn hàng */}
+                <div className="rounded-2xl border border-border overflow-hidden overflow-x-auto">
+                  <table className="w-full text-sm min-w-[500px]">
+                    <thead className="bg-muted/50 text-muted-foreground text-xs uppercase">
+                      <tr>
+                        <th className="text-left font-semibold px-4 py-3">Mã đơn</th>
+                        {!selectedOrder && <th className="text-left font-semibold px-4 py-3">Đặt lúc</th>}
+                        {!selectedOrder && <th className="text-left font-semibold px-4 py-3">Địa chỉ giao</th>}
+                        <th className="text-left font-semibold px-4 py-3">Trạng thái</th>
+                        <th className="text-right font-semibold px-4 py-3">Tổng tiền</th>
+                        <th className="text-right font-semibold px-4 py-3">Thao tác</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {filteredOrders.map((o) => (
+                        <tr key={o.id} className={`hover:bg-muted/30 transition-colors ${selectedOrder?.id === o.id ? 'bg-primary/5 border-l-2 border-l-primary' : ''}`}>
+                          <td className="px-4 py-3 font-mono text-xs font-semibold text-foreground">#{o.id.substring(0, 8)}...</td>
+                          {!selectedOrder && <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(o.created_at)}</td>}
+                          {!selectedOrder && <td className="px-4 py-3 text-muted-foreground text-xs max-w-[240px] truncate">{o.shipping_address}</td>}
+                          <td className="px-4 py-3">{getOrderStatusBadge(o.status)}</td>
+                          <td className="px-4 py-3 text-right font-semibold text-foreground whitespace-nowrap">{formatPrice(o.total)}</td>
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              onClick={() => setSelectedOrder(o)}
+                              className="px-3 py-1.5 rounded-lg border border-border hover:bg-muted text-xs font-bold text-foreground cursor-pointer transition-colors"
+                            >
+                              Xem chi tiết
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {filteredOrders.length === 0 && (
+                        <tr>
+                          <td colSpan={selectedOrder ? 4 : 6} className="px-4 py-10 text-center text-muted-foreground text-sm">Không tìm thấy đơn hàng nào.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* CỘT PHẢI: CHI TIẾT ĐƠN HÀNG (STICKY SIDEBAR) */}
+              {selectedOrder && (
+                <div className="w-full lg:w-[480px] xl:w-[500px] bg-card border border-border rounded-2xl shadow-2xl p-5 sticky top-6 max-h-[calc(100vh-160px)] overflow-y-auto custom-scroll animate-in slide-in-from-right duration-300 flex-shrink-0 space-y-5">
+                  <div className="flex items-center justify-between pb-3 border-b border-border">
+                    <h2 className="text-sm font-bold text-foreground">Chi tiết đơn #{selectedOrder.id.substring(0, 8)}...</h2>
+                    <button onClick={() => setSelectedOrder(null)} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Thông tin vận chuyển */}
+                  <div className="space-y-2.5 bg-muted/30 p-4 rounded-xl border border-border text-xs">
+                    <h3 className="font-bold text-foreground flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-primary" />
+                      <span>Thông tin giao hàng</span>
+                    </h3>
+                    <p className="text-muted-foreground leading-relaxed">{selectedOrder.shipping_address}</p>
+                    <div className="flex items-center gap-1.5 text-muted-foreground pt-1 border-t border-border/40 mt-1">
+                      <Clock className="w-3.5 h-3.5 text-primary" />
+                      <span>Đặt lúc: {formatDate(selectedOrder.created_at)}</span>
+                    </div>
+                  </div>
+
+                  {/* Thay đổi trạng thái đơn */}
+                  <div className="space-y-2 border-t border-border pt-3 text-xs">
+                    <label className="text-[11px] font-bold text-muted-foreground block">Trạng thái vận chuyển:</label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {['pending', 'processing', 'shipping', 'delivered', 'cancelled'].map((st) => (
                         <button
-                          onClick={() => setSelectedOrder(o)}
-                          className="px-3 py-1.5 rounded-lg border border-border hover:bg-muted text-xs font-bold text-foreground cursor-pointer transition-colors"
+                          key={st}
+                          disabled={updatingOrderStatus}
+                          onClick={() => handleUpdateOrderStatus(selectedOrder.id, st)}
+                          className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer border ${
+                            selectedOrder.status === st 
+                              ? 'bg-primary text-primary-foreground border-primary shadow-sm shadow-primary/20' 
+                              : 'bg-background hover:bg-muted text-muted-foreground border-border'
+                          }`}
                         >
-                          Xem chi tiết
+                          {st === 'pending' && 'Chờ xử lý'}
+                          {st === 'processing' && 'Duyệt / Chuẩn bị'}
+                          {st === 'shipping' && 'Bắt đầu giao'}
+                          {st === 'delivered' && 'Hoàn thành'}
+                          {st === 'cancelled' && 'Hủy đơn'}
                         </button>
-                      </td>
-                    </tr>
-                  ))}
-                  {filteredOrders.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground text-sm">Không tìm thấy đơn hàng nào.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Danh sách sản phẩm */}
+                  <div className="space-y-3 border-t border-border pt-3 text-xs">
+                    <h3 className="font-bold text-foreground">Sản phẩm đã mua</h3>
+                    <div className="space-y-3 max-h-52 overflow-y-auto pr-1 custom-scroll">
+                      {selectedOrder.items?.map((item: any, idx: number) => (
+                        <div key={idx} className="flex gap-3 items-center justify-between border-b border-border/40 pb-2">
+                          <div className="flex gap-2 items-center">
+                            <div className="w-10 h-10 rounded-lg border border-border p-1 bg-background flex-shrink-0 flex items-center justify-center">
+                              <img src={item.image} alt={item.name} className="w-full h-full object-contain" />
+                            </div>
+                            <div>
+                              <p className="font-bold text-foreground line-clamp-1 text-[11px]">{item.name}</p>
+                              <p className="text-[10px] text-muted-foreground">Giá bán: {formatPrice(item.price)}</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[10px] text-muted-foreground">x{item.quantity}</span>
+                            <p className="font-bold text-foreground">{formatPrice(item.price * item.quantity)}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Tổng thanh toán */}
+                  <div className="flex justify-between items-center border-t border-border pt-3 text-xs font-bold bg-muted/10 p-2.5 rounded-xl">
+                    <span className="text-muted-foreground">Tổng cộng:</span>
+                    <span className="text-sm text-primary font-black">{formatPrice(selectedOrder.total)}</span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -2170,65 +3373,169 @@ export default function AdminPage() {
                 <Loader2 className="w-8 h-8 text-primary animate-spin" />
               </div>
             ) : (
-              <div className="rounded-2xl border border-border overflow-hidden overflow-x-auto">
-                <table className="w-full text-sm min-w-[720px]">
-                  <thead className="bg-muted/50 text-muted-foreground text-xs uppercase">
-                    <tr>
-                      <th className="text-left font-semibold px-4 py-3">Người dùng</th>
-                      <th className="text-left font-semibold px-4 py-3">Email</th>
-                      <th className="text-left font-semibold px-4 py-3">Đăng ký ngày</th>
-                      <th className="text-left font-semibold px-4 py-3">Quyền hạn (Role)</th>
-                      <th className="text-right font-semibold px-4 py-3">Gán Role</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {users.map((u) => {
-                      const role = u.user_metadata?.role || 'customer';
-                      return (
-                        <tr key={u.id} className="hover:bg-muted/30 transition-colors">
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-3">
-                              {u.user_metadata?.avatar_url ? (
-                                <img src={u.user_metadata.avatar_url} alt="avatar" className="w-8 h-8 rounded-full object-cover" />
-                              ) : (
-                                <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold uppercase">
-                                  {u.email?.substring(0, 2)}
-                                </div>
-                              )}
-                              <span className="font-semibold text-foreground">{u.user_metadata?.full_name || 'Khách hàng'}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-muted-foreground">{u.email}</td>
-                          <td className="px-4 py-3 text-xs text-muted-foreground">{u.created_at ? new Date(u.created_at).toLocaleDateString('vi-VN') : ''}</td>
-                          <td className="px-4 py-3">
-                            <span className={`px-2.5 py-0.5 rounded text-xs font-bold border uppercase ${
-                              role === 'admin' ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' : role === 'staff' ? 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20' : 'bg-muted text-muted-foreground border-border'
-                            }`}>
-                              {role === 'admin' ? 'Quản trị' : role === 'staff' ? 'Nhân viên' : 'Khách hàng'}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <select
-                              value={role}
-                              disabled={updatingUserRole === u.id}
-                              onChange={(e) => handleUpdateUserRole(u.id, e.target.value)}
-                              className="px-2.5 py-1 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:border-primary cursor-pointer disabled:opacity-50"
-                            >
-                              <option value="customer">Khách hàng</option>
-                              <option value="staff">Nhân viên</option>
-                              <option value="admin">Quản trị viên</option>
-                            </select>
-                          </td>
+              <div className="flex flex-col lg:flex-row gap-6 items-start relative w-full">
+                {/* CỘT TRÁI: DANH SÁCH NGƯỜI DÙNG */}
+                <div className={`space-y-4 transition-all duration-300 ${selectedUserDetail ? 'flex-1 min-w-0' : 'w-full'}`}>
+                  <div className="rounded-2xl border border-border overflow-hidden overflow-x-auto">
+                    <table className="w-full text-sm min-w-[500px]">
+                      <thead className="bg-muted/50 text-muted-foreground text-xs uppercase">
+                        <tr>
+                          <th className="text-left font-semibold px-4 py-3">Người dùng</th>
+                          {!selectedUserDetail && <th className="text-left font-semibold px-4 py-3">Email</th>}
+                          {!selectedUserDetail && <th className="text-left font-semibold px-4 py-3">Đăng ký ngày</th>}
+                          <th className="text-left font-semibold px-4 py-3">Quyền hạn (Role)</th>
+                          <th className="text-right font-semibold px-4 py-3">Gán Role</th>
+                          <th className="text-right font-semibold px-4 py-3">Thao tác</th>
                         </tr>
-                      );
-                    })}
-                    {users.length === 0 && (
-                      <tr>
-                        <td colSpan={5} className="px-4 py-10 text-center text-muted-foreground text-sm">Không tải được thông tin thành viên.</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {users.map((u) => {
+                          const role = u.user_metadata?.role || 'customer';
+                          return (
+                            <tr key={u.id} className={`hover:bg-muted/30 transition-colors ${selectedUserDetail?.id === u.id ? 'bg-primary/5 border-l-2 border-l-primary' : ''}`}>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-3">
+                                  {u.user_metadata?.avatar_url ? (
+                                    <img src={u.user_metadata.avatar_url} alt="avatar" className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
+                                  ) : (
+                                    <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold uppercase flex-shrink-0">
+                                      {u.email?.substring(0, 2)}
+                                    </div>
+                                  )}
+                                  <span className="font-semibold text-foreground truncate max-w-[140px]">{u.user_metadata?.full_name || 'Khách hàng'}</span>
+                                </div>
+                              </td>
+                              {!selectedUserDetail && <td className="px-4 py-3 text-muted-foreground">{u.email}</td>}
+                              {!selectedUserDetail && <td className="px-4 py-3 text-xs text-muted-foreground">{u.created_at ? new Date(u.created_at).toLocaleDateString('vi-VN') : ''}</td>}
+                              <td className="px-4 py-3">
+                                <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold border uppercase tracking-wide ${
+                                  role === 'admin' ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' : role === 'staff' ? 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20' : 'bg-muted text-muted-foreground border-border'
+                                }`}>
+                                  {role === 'admin' ? 'Quản trị' : role === 'staff' ? 'Nhân viên' : 'Khách hàng'}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                {isAdmin ? (
+                                  <div className="relative inline-block text-left role-dropdown-container">
+                                    <button
+                                      type="button"
+                                      disabled={updatingUserRole === u.id}
+                                      onClick={() => setActiveUserRoleDropdown(activeUserRoleDropdown === u.id ? null : u.id)}
+                                      className={`h-8 px-2.5 rounded-lg border text-xs flex items-center justify-between gap-1.5 cursor-pointer disabled:opacity-50 transition-all ${
+                                        activeUserRoleDropdown === u.id
+                                          ? 'border-primary bg-primary/5 text-foreground'
+                                          : 'border-border bg-background text-muted-foreground hover:text-foreground'
+                                      }`}
+                                    >
+                                      <span>
+                                        {role === 'admin' ? 'Quản trị' : role === 'staff' ? 'Nhân viên' : 'Khách hàng'}
+                                      </span>
+                                      <ChevronDown className="w-3.5 h-3.5" />
+                                    </button>
+                                    
+                                    {activeUserRoleDropdown === u.id && (
+                                      <div className="absolute top-[calc(100%+4px)] right-0 w-36 bg-card border border-border rounded-xl shadow-2xl p-1 z-35 animate-in fade-in slide-in-from-top-1 duration-150">
+                                        <div className="max-h-36 overflow-y-auto pr-1 custom-scroll space-y-0.5">
+                                          {[
+                                            { val: 'customer', label: 'Khách hàng' },
+                                            { val: 'staff', label: 'Nhân viên' },
+                                            { val: 'admin', label: 'Quản trị viên' }
+                                          ].map((opt) => (
+                                            <div
+                                              key={opt.val}
+                                              onClick={() => {
+                                                setActiveUserRoleDropdown(null);
+                                                if (opt.val !== role) {
+                                                  setPendingRoleChange({ userId: u.id, newRole: opt.val });
+                                                  setRoleConfirmOpen(true);
+                                                }
+                                              }}
+                                              className={`px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
+                                                role === opt.val ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-muted/60 text-muted-foreground hover:text-foreground'
+                                              }`}
+                                            >
+                                              {opt.label}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-[10px] text-muted-foreground/60 italic font-medium">Chỉ Admin được gán</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                <button
+                                  onClick={() => setSelectedUserDetail(u)}
+                                  className="px-2.5 py-1 text-xs rounded-lg border border-border hover:bg-muted text-foreground font-bold cursor-pointer transition-colors"
+                                >
+                                  Xem chi tiết
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {users.length === 0 && (
+                          <tr>
+                            <td colSpan={selectedUserDetail ? 4 : 6} className="px-4 py-10 text-center text-muted-foreground text-sm">Không tải được thông tin thành viên.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* CỘT PHẢI: CHI TIẾT NGƯỜI DÙNG / NHÂN VIÊN (STICKY SIDEBAR) */}
+                {selectedUserDetail && (
+                  <div className="w-full lg:w-[400px] xl:w-[440px] bg-card border border-border rounded-2xl shadow-2xl p-5 sticky top-6 max-h-[calc(100vh-160px)] overflow-y-auto custom-scroll animate-in slide-in-from-right duration-300 flex-shrink-0 space-y-4 text-xs">
+                    <div className="flex items-center justify-between pb-3 border-b border-border">
+                      <h2 className="text-sm font-bold text-foreground">Thông tin tài khoản</h2>
+                      <button onClick={() => setSelectedUserDetail(null)} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <div className="flex flex-col items-center py-4 space-y-3 bg-muted/20 rounded-xl border border-border">
+                      {selectedUserDetail.user_metadata?.avatar_url ? (
+                        <img src={selectedUserDetail.user_metadata.avatar_url} alt="avatar" className="w-16 h-16 rounded-full border border-border object-cover" />
+                      ) : (
+                        <div className="w-16 h-16 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xl font-bold uppercase border border-border">
+                          {selectedUserDetail.email?.substring(0, 2)}
+                        </div>
+                      )}
+                      <div className="text-center">
+                        <h3 className="font-bold text-foreground text-sm">{selectedUserDetail.user_metadata?.full_name || 'Khách hàng'}</h3>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">{selectedUserDetail.email}</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      <div className="flex justify-between items-center py-1.5 border-b border-border/40 font-bold">
+                        <span className="text-muted-foreground font-medium">Mã tài khoản (UID):</span>
+                        <span className="font-mono text-[10px] text-foreground">{selectedUserDetail.id}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-1.5 border-b border-border/40 font-bold">
+                        <span className="text-muted-foreground font-medium">Vai trò hệ thống:</span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border uppercase ${
+                          (selectedUserDetail.user_metadata?.role || 'customer') === 'admin'
+                            ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
+                            : (selectedUserDetail.user_metadata?.role || 'customer') === 'staff'
+                            ? 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20'
+                            : 'bg-muted text-muted-foreground border-border'
+                        }`}>
+                          {(selectedUserDetail.user_metadata?.role || 'customer') === 'admin' ? 'Quản trị' : (selectedUserDetail.user_metadata?.role || 'customer') === 'staff' ? 'Nhân viên' : 'Khách hàng'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-1.5 border-b border-border/40 font-bold">
+                        <span className="text-muted-foreground font-medium">Ngày đăng ký:</span>
+                        <span className="text-foreground">
+                          {selectedUserDetail.created_at ? new Date(selectedUserDetail.created_at).toLocaleDateString('vi-VN') + ' ' + new Date(selectedUserDetail.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : ''}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -2474,9 +3781,56 @@ export default function AdminPage() {
       </main>
 
       {/* ========================================================= */}
-      {/* MODAL 1: XEM CHI TIẾT ĐƠN HÀNG (ADMIN XỬ LÝ TRẠNG THÁI) */}
+      {/* REACT CONFIRMATION MODAL: XÁC NHẬN ĐỔI VAI TRÒ (ROLE) */}
       {/* ========================================================= */}
-      {selectedOrder && (
+      {roleConfirmOpen && pendingRoleChange && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-card border border-border w-full max-w-sm rounded-2xl shadow-2xl p-5 space-y-4 animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 text-amber-500">
+              <AlertCircle className="w-6 h-6 flex-shrink-0" />
+              <h3 className="text-sm font-bold text-foreground">Xác nhận thay đổi vai trò?</h3>
+            </div>
+            
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Bạn có chắc chắn muốn thay đổi vai trò của tài khoản này thành{' '}
+              <strong className="text-foreground">
+                {pendingRoleChange.newRole === 'admin' ? 'Quản trị viên' : pendingRoleChange.newRole === 'staff' ? 'Nhân viên' : 'Khách hàng'}
+              </strong>{' '}
+              không? Thao tác này sẽ trực tiếp thay đổi quyền hạn truy cập của họ.
+            </p>
+            
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setRoleConfirmOpen(false);
+                  setPendingRoleChange(null);
+                }}
+                className="flex-1 h-9 rounded-xl border border-border bg-background hover:bg-muted text-foreground text-xs font-semibold cursor-pointer transition-colors"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const { userId, newRole } = pendingRoleChange;
+                  setRoleConfirmOpen(false);
+                  setPendingRoleChange(null);
+                  await handleUpdateUserRole(userId, newRole);
+                }}
+                className="flex-1 h-9 rounded-xl bg-primary hover:opacity-90 text-primary-foreground text-xs font-bold shadow-md shadow-primary/15 cursor-pointer active:scale-95 transition-all"
+              >
+                Xác nhận
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL 1: XEM CHI TIẾT ĐƠN HÀNG (ADMIN XỬ LÝ TRẠNG THÁI) [VÔ HIỆU HÓA] */}
+      {/* ========================================================= */}
+      {false && selectedOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 backdrop-blur-sm p-4" onClick={() => setSelectedOrder(null)}>
           <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-border sticky top-0 bg-card">
@@ -2564,7 +3918,7 @@ export default function AdminPage() {
       {/* ========================================================= */}
       {/* MODAL 3: THÊM / SỬA SẢN PHẨM (DÙNG SPECS EDITOR KEY-VALUE) */}
       {/* ========================================================= */}
-      {modalOpen && (
+      {false && modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 backdrop-blur-sm p-4" onClick={() => setModalOpen(false)}>
           <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-border sticky top-0 bg-card z-10">
@@ -2656,34 +4010,7 @@ export default function AdminPage() {
                 />
               </div>
 
-              {/* TRƯỜNG DỮ LIỆU BỔ SUNG: LINK AMAZON & SỐ LƯỢT ĐÁNH GIÁ */}
-              <div className="grid grid-cols-2 gap-4 border-t border-border/60 pt-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground flex items-center gap-1">
-                    <span>🌐 Đường dẫn Amazon gốc</span>
-                    <span className="text-[10px] font-normal text-muted-foreground">(original_link)</span>
-                  </label>
-                  <input
-                    value={amazonLink}
-                    onChange={(e) => setAmazonLink(e.target.value)}
-                    placeholder="https://www.amazon.in/dp/..."
-                    className="w-full h-11 px-4 rounded-xl border border-border bg-background text-foreground text-sm focus:outline-none focus:border-primary transition-colors"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground flex items-center gap-1">
-                    <span>⭐ Lượt đánh giá Amazon</span>
-                    <span className="text-[10px] font-normal text-muted-foreground">(ratings_count)</span>
-                  </label>
-                  <input
-                    type="number"
-                    value={ratingsCount}
-                    onChange={(e) => setRatingsCount(e.target.value)}
-                    placeholder="Ví dụ: 15480"
-                    className="w-full h-11 px-4 rounded-xl border border-border bg-background text-foreground text-sm focus:outline-none focus:border-primary transition-colors"
-                  />
-                </div>
-              </div>
+
 
               {/* SECTION: QUẢN LÝ CẤU HÌNH BIẾN THỂ (VARIANTS) */}
               <div className="space-y-2 border-t border-border pt-4">

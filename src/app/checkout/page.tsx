@@ -1,11 +1,88 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCart } from '@/store/useCart';
 import { supabase } from '@/lib/supabase';
-import { CreditCard, Truck, ChevronLeft, Loader2, AlertCircle } from 'lucide-react';
+import { CreditCard, Truck, ChevronLeft, Loader2, AlertCircle, ChevronDown, Check } from 'lucide-react';
 import Link from 'next/link';
+
+interface CustomSelectProps {
+  label: string;
+  placeholder: string;
+  value: string;
+  options: string[];
+  onChange: (val: string) => void;
+  disabled?: boolean;
+}
+
+function CustomSelect({ label, placeholder, value, options, onChange, disabled }: CustomSelectProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div className="space-y-1.5 flex-1 relative select-none" ref={dropdownRef}>
+      <label className="text-xs font-semibold text-muted-foreground">{label}</label>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setIsOpen(!isOpen)}
+        className={`w-full h-11 px-4 rounded-xl border text-sm flex items-center justify-between cursor-pointer transition-all ${
+          isOpen
+            ? 'border-primary bg-background text-foreground'
+            : 'border-border bg-background text-foreground hover:border-muted-foreground/35'
+        } disabled:opacity-50 disabled:cursor-not-allowed`}
+      >
+        <span className={value ? 'text-foreground' : 'text-muted-foreground/60'}>
+          {value || placeholder}
+        </span>
+        <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && !disabled && (
+        <div className="absolute top-[calc(100%+4px)] left-0 w-full bg-card border border-border rounded-xl shadow-2xl p-1.5 z-50 animate-in fade-in slide-in-from-top-1 duration-150">
+          <div className="max-h-44 overflow-y-auto pr-1 custom-scroll space-y-0.5">
+            <div
+              onClick={() => {
+                onChange('');
+                setIsOpen(false);
+              }}
+              className={`px-3 py-2 rounded-lg text-xs cursor-pointer transition-colors ${
+                !value ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-muted/60 text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {placeholder}
+            </div>
+            {options.map((opt) => (
+              <div
+                key={opt}
+                onClick={() => {
+                  onChange(opt);
+                  setIsOpen(false);
+                }}
+                className={`px-3 py-2 rounded-lg text-xs cursor-pointer transition-colors ${
+                  value === opt ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-muted/60 text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {opt}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function CheckoutPage() {
   const router = useRouter();
@@ -314,52 +391,31 @@ export default function CheckoutPage() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground">Tỉnh / Thành phố</label>
-                <select
-                  required
-                  value={province}
-                  onChange={(e) => handleProvinceChange(e.target.value)}
-                  className="w-full h-11 px-3 rounded-xl border border-border bg-background text-foreground text-sm focus:outline-none focus:border-primary cursor-pointer"
-                >
-                  <option value="">Chọn tỉnh/thành phố</option>
-                  {addressData.map((p) => (
-                    <option key={p.name} value={p.name}>{p.name}</option>
-                  ))}
-                </select>
-              </div>
+              <CustomSelect
+                label="Tỉnh / Thành phố"
+                placeholder="Chọn tỉnh/thành phố"
+                value={province}
+                options={addressData.map((p) => p.name)}
+                onChange={handleProvinceChange}
+              />
               
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground">Quận / Huyện</label>
-                <select
-                  required
-                  disabled={!province}
-                  value={district}
-                  onChange={(e) => handleDistrictChange(e.target.value)}
-                  className="w-full h-11 px-3 rounded-xl border border-border bg-background text-foreground text-sm focus:outline-none focus:border-primary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <option value="">Chọn quận/huyện</option>
-                  {availableDistricts.map((d) => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
-              </div>
+              <CustomSelect
+                label="Quận / Huyện"
+                placeholder="Chọn quận/huyện"
+                value={district}
+                options={availableDistricts}
+                onChange={handleDistrictChange}
+                disabled={!province}
+              />
               
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground">Phường / Xã</label>
-                <select
-                  required
-                  disabled={!district}
-                  value={ward}
-                  onChange={(e) => setWard(e.target.value)}
-                  className="w-full h-11 px-3 rounded-xl border border-border bg-background text-foreground text-sm focus:outline-none focus:border-primary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <option value="">Chọn phường/xã</option>
-                  {availableWards.map((w) => (
-                    <option key={w} value={w}>{w}</option>
-                  ))}
-                </select>
-              </div>
+              <CustomSelect
+                label="Phường / Xã"
+                placeholder="Chọn phường/xã"
+                value={ward}
+                options={availableWards}
+                onChange={(val) => setWard(val)}
+                disabled={!district}
+              />
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-muted-foreground">
@@ -377,15 +433,28 @@ export default function CheckoutPage() {
             </div>
 
             {/* Checkbox lưu địa chỉ */}
-            <div className="flex items-center gap-2 pt-1">
-              <input
-                type="checkbox"
+            <div className="flex items-center gap-2.5 pt-1.5 select-none">
+              <button
+                type="button"
                 id="saveAddress"
-                checked={saveAddress}
-                onChange={(e) => setSaveAddress(e.target.checked)}
-                className="w-4 h-4 rounded border-border text-primary focus:ring-primary cursor-pointer"
-              />
-              <label htmlFor="saveAddress" className="text-xs text-muted-foreground cursor-pointer select-none">
+                onClick={() => setSaveAddress(!saveAddress)}
+                className="flex items-center justify-center cursor-pointer"
+              >
+                <div className={`w-4.5 h-4.5 rounded-md border flex items-center justify-center transition-all ${
+                  saveAddress
+                    ? 'bg-primary border-primary text-white shadow-sm shadow-primary/20 scale-105'
+                    : 'border-border bg-background hover:border-muted-foreground/50'
+                }`}>
+                  {saveAddress && (
+                    <Check className="w-3 h-3 stroke-[3.5]" />
+                  )}
+                </div>
+              </button>
+              <label 
+                htmlFor="saveAddress" 
+                onClick={() => setSaveAddress(!saveAddress)} 
+                className="text-xs text-muted-foreground cursor-pointer select-none"
+              >
                 Lưu địa chỉ cho lần mua kế tiếp
               </label>
             </div>
