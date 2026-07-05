@@ -3,7 +3,10 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { Laptop, Smartphone, Watch, Headphones, Layers, ArrowRight, Star, ShoppingCart, Sparkles } from 'lucide-react';
+import { 
+  Laptop, Smartphone, Watch, Headphones, Layers, ArrowRight, Star, ShoppingCart, 
+  Sparkles, Tablet, Cpu, Tv, RefreshCw, BadgeAlert, Award, ChevronRight, CheckCircle2 
+} from 'lucide-react';
 import { useCart } from '@/store/useCart';
 import HeroCarousel from '@/components/hero-carousel';
 
@@ -99,15 +102,178 @@ const FALLBACK_PRODUCTS = [
   }
 ];
 
+interface MegaMenuColumn {
+  title: string;
+  items: { label: string; href: string; badge?: string }[];
+}
+
+interface MegaMenuData {
+  [category: string]: {
+    columns: MegaMenuColumn[];
+  };
+}
+
+// Định nghĩa dữ liệu Mega Menu bay ngang cực kỳ phong phú và chi tiết cho từng loại thiết bị
+const MEGA_MENU_DATA: MegaMenuData = {
+  phone: {
+    columns: [
+      {
+        title: 'Hãng điện thoại & Tablet',
+        items: [
+          { label: 'iPhone (Apple)', href: '/products?category=phone&brand=Apple' },
+          { label: 'iPad (Máy tính bảng)', href: '/products?category=smartwatch&brand=Apple' },
+          { label: 'Samsung Galaxy', href: '/products?category=phone&brand=Samsung' },
+          { label: 'Xiaomi Redmi', href: '/products?category=phone&brand=Xiaomi' },
+          { label: 'Google Pixel', href: '/products?category=phone&brand=Google' },
+          { label: 'Oppo', href: '/products?category=phone' }
+        ]
+      },
+      {
+        title: 'Chọn theo mức giá',
+        items: [
+          { label: 'Dưới 5.000.000đ', href: '/products?category=phone' },
+          { label: 'Từ 5.000.000đ - 10.000.000đ', href: '/products?category=phone' },
+          { label: 'Từ 10.000.000đ - 20.000.000đ', href: '/products?category=phone' },
+          { label: 'Trên 20.000.000đ', href: '/products?category=phone' }
+        ]
+      },
+      {
+        title: 'Điện thoại HOT 🔥',
+        items: [
+          { label: 'iPhone 15 Pro Max', href: '/products/prod-iphone15-pm', badge: 'Hot' },
+          { label: 'Galaxy S24 Ultra', href: '/products/prod-s24-ultra', badge: 'Hot' },
+          { label: 'Xiaomi 14 Ultra', href: '/products/prod-8', badge: 'New' },
+          { label: 'Google Pixel 8 Pro', href: '/products/prod-9' }
+        ]
+      }
+    ]
+  },
+  laptop: {
+    columns: [
+      {
+        title: 'Hãng Laptop',
+        items: [
+          { label: 'MacBook (Apple)', href: '/products?category=laptop&brand=Apple' },
+          { label: 'Dell XPS / Inspiron', href: '/products?category=laptop&brand=Dell' },
+          { label: 'Asus ROG / Zenbook', href: '/products?category=laptop&brand=Asus' },
+          { label: 'Lenovo ThinkPad', href: '/products?category=laptop&brand=Lenovo' }
+        ]
+      },
+      {
+        title: 'Nhu cầu sử dụng',
+        items: [
+          { label: 'Văn phòng, Học tập', href: '/products?category=laptop' },
+          { label: 'Gaming, Chiến game AAA', href: '/products?category=laptop' },
+          { label: 'Đồ họa, Lập trình chuyên nghiệp', href: '/products?category=laptop' },
+          { label: 'Mỏng nhẹ, Sang trọng', href: '/products?category=laptop' }
+        ]
+      },
+      {
+        title: 'Laptop HOT 🔥',
+        items: [
+          { label: 'MacBook Air M3 13"', href: '/products/prod-air-m3', badge: 'Bán chạy' },
+          { label: 'MacBook Pro M3 Pro', href: '/products/prod-2', badge: 'Pro' },
+          { label: 'Dell XPS 13 Plus', href: '/products/prod-3' },
+          { label: 'Asus ROG Zephyrus G14', href: '/products/prod-4', badge: 'Gaming' }
+        ]
+      }
+    ]
+  },
+  smartwatch: {
+    columns: [
+      {
+        title: 'Thương hiệu đồng hồ',
+        items: [
+          { label: 'Apple Watch Series', href: '/products?category=smartwatch&brand=Apple' },
+          { label: 'Garmin Outdoor GPS', href: '/products?category=smartwatch&brand=Garmin' },
+          { label: 'Huawei Watch GT', href: '/products?category=smartwatch&brand=Huawei' }
+        ]
+      },
+      {
+        title: 'Phân loại dòng máy',
+        items: [
+          { label: 'Thể thao chuyên nghiệp', href: '/products?category=smartwatch' },
+          { label: 'Thời trang, Công sở', href: '/products?category=smartwatch' },
+          { label: 'Hỗ trợ GPS độc lập', href: '/products?category=smartwatch' },
+          { label: 'Pin trâu trên 14 ngày', href: '/products?category=smartwatch' }
+        ]
+      },
+      {
+        title: 'Đồng hồ HOT 🔥',
+        items: [
+          { label: 'Apple Watch Ultra 2', href: '/products/prod-watch-ultra2', badge: 'VIP' },
+          { label: 'Garmin Fenix 7 Pro', href: '/products/prod-11', badge: 'Solar' },
+          { label: 'Huawei Watch GT 4', href: '/products/prod-12' }
+        ]
+      }
+    ]
+  },
+  earphone: {
+    columns: [
+      {
+        title: 'Thương hiệu tai nghe',
+        items: [
+          { label: 'AirPods (Apple)', href: '/products?category=earphone&brand=Apple' },
+          { label: 'Sony Headphone', href: '/products?category=earphone&brand=Sony' },
+          { label: 'Samsung Buds / JBL', href: '/products?category=earphone' }
+        ]
+      },
+      {
+        title: 'Kiểu dáng tai nghe',
+        items: [
+          { label: 'True Wireless (In-Ear)', href: '/products?category=earphone' },
+          { label: 'Chụp tai (Over-Ear)', href: '/products?category=earphone' },
+          { label: 'Chống ồn chủ động ANC', href: '/products?category=earphone' }
+        ]
+      },
+      {
+        title: 'Tai nghe HOT 🔥',
+        items: [
+          { label: 'AirPods Pro Gen 2', href: '/products/prod-airpods-pro2', badge: 'Hot' },
+          { label: 'Sony WH-1000XM5 Over-ear', href: '/products/prod-15', badge: 'Best' },
+          { label: 'Sony WF-1000XM5', href: '/products/prod-14' }
+        ]
+      }
+    ]
+  },
+  accessory: {
+    columns: [
+      {
+        title: 'Thương hiệu phụ kiện',
+        items: [
+          { label: 'Anker GaN Charger', href: '/products?category=accessory&brand=Anker' },
+          { label: 'Logitech Mouse/Keyboard', href: '/products?category=accessory&brand=Logitech' },
+          { label: 'Apple Accessory', href: '/products?category=accessory' }
+        ]
+      },
+      {
+        title: 'Nhóm phụ kiện',
+        items: [
+          { label: 'Củ sạc, Cáp sạc nhanh GaN', href: '/products?category=accessory' },
+          { label: 'Chuột không dây, Bàn phím', href: '/products?category=accessory' },
+          { label: 'Ốp lưng, Kính cường lực', href: '/products?category=accessory' }
+        ]
+      },
+      {
+        title: 'Phụ kiện HOT 🔥',
+        items: [
+          { label: 'Chuột MX Master 3S', href: '/products/prod-chuot-mx3s', badge: 'Hot' },
+          { label: 'Sạc Anker Prime 67W', href: '/products/prod-sarc-gan-67w', badge: 'GaN' }
+        ]
+      }
+    ]
+  }
+};
+
 export default function HomePage() {
   const [products, setProducts] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
   const addItem = useCart((state) => state.addItem);
 
   useEffect(() => {
     const fetchFeaturedProducts = async () => {
       setIsLoading(true);
-      // Chưa cấu hình Supabase -> dùng ngay dữ liệu tĩnh, tránh chờ network treo
       if (!isSupabaseConfigured) {
         setProducts(FALLBACK_PRODUCTS);
         setIsLoading(false);
@@ -154,17 +320,17 @@ export default function HomePage() {
     <Link
       key={prod.id}
       href={`/products/${prod.id}`}
-      className="group rounded-2xl border border-border bg-card/30 hover:bg-card/70 hover:border-muted-foreground/35 p-4 flex flex-col justify-between transition-all duration-300 relative overflow-hidden"
+      className="group rounded-2xl border border-border bg-card/30 hover:bg-card/70 hover:border-primary/45 p-4 flex flex-col justify-between transition-all duration-300 relative overflow-hidden"
     >
       <div className="space-y-4">
-        <div className="w-full aspect-square rounded-xl bg-background flex items-center justify-center overflow-hidden relative border border-border/40">
+        <div className="w-full aspect-square rounded-xl bg-card p-4 flex items-center justify-center overflow-hidden relative border border-border/40">
           <img
             src={prod.images[0]}
             alt={prod.name}
-            className="w-[85%] h-[85%] object-contain transform group-hover:scale-105 transition-transform duration-300"
+            className="max-h-full max-w-full object-contain transform group-hover:scale-105 transition-transform duration-300"
           />
           {prod.rating_avg && (
-            <span className="absolute top-2 right-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-background/90 border border-border text-[10px] text-yellow-500 font-bold">
+            <span className="absolute top-2 right-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-sm border border-white/10 text-[10px] text-yellow-500 font-bold">
               <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
               <span>{prod.rating_avg}</span>
             </span>
@@ -172,7 +338,7 @@ export default function HomePage() {
         </div>
         <div>
           <span className="text-[10px] uppercase font-bold text-primary tracking-wider">{prod.brand}</span>
-          <h3 className="font-bold text-foreground text-sm md:text-base line-clamp-1 group-hover:text-primary transition-colors mt-0.5">
+          <h3 className="font-bold text-foreground text-sm line-clamp-1 group-hover:text-primary transition-colors mt-0.5">
             {prod.name}
           </h3>
           <p className="text-muted-foreground text-xs line-clamp-2 mt-1.5 leading-relaxed">{prod.description}</p>
@@ -180,10 +346,10 @@ export default function HomePage() {
       </div>
 
       <div className="flex items-center justify-between gap-2 mt-4 border-t border-border/50 pt-3">
-        <span className="font-extrabold text-primary text-sm md:text-base whitespace-nowrap">{formatPrice(prod.price)}</span>
+        <span className="font-extrabold text-foreground text-sm md:text-base whitespace-nowrap">{formatPrice(prod.price)}</span>
         <button
           onClick={(e) => handleAddToCart(e, prod)}
-          className="p-2 rounded-xl bg-primary hover:opacity-90 text-primary-foreground shadow-md shadow-primary/10 active:scale-95 transition-all cursor-pointer"
+          className="p-2 rounded-xl bg-primary hover:bg-primary/95 text-primary-foreground shadow-md shadow-primary/10 active:scale-95 transition-all cursor-pointer"
           title="Thêm vào giỏ"
         >
           <ShoppingCart className="w-4 h-4" />
@@ -192,53 +358,119 @@ export default function HomePage() {
     </Link>
   );
 
+  // Danh mục menu dọc của trang chủ
+  const sidebarItems = [
+    { name: 'Điện thoại, Tablet', slug: 'phone', icon: Smartphone },
+    { name: 'Laptop cao cấp', slug: 'laptop', icon: Laptop },
+    { name: 'Đồng hồ thông minh', slug: 'smartwatch', icon: Watch },
+    { name: 'Âm thanh, Tai nghe', slug: 'earphone', icon: Headphones },
+    { name: 'Phụ kiện công nghệ', slug: 'accessory', icon: Layers },
+    // Các danh mục bổ sung cho phong phú
+    { name: 'PC, Màn hình, Máy in', slug: 'pc', icon: Cpu },
+    { name: 'Tivi, Điện máy', slug: 'tv', icon: Tv },
+    { name: 'Thu cũ đổi mới', slug: 'trade-in', icon: RefreshCw },
+    { name: 'Hàng cũ giá rẻ', slug: 'used-items', icon: BadgeAlert },
+    { name: 'Khuyến mãi đặc quyền', slug: 'promo', icon: Sparkles }
+  ];
+
   return (
     <div className="flex flex-col gap-16 pb-16 transition-colors duration-200">
-      {/* 1. HERO BANNER CAROUSEL */}
-      <HeroCarousel />
+      
+      {/* 1. HERO AREA: SIDEBAR DANH MỤC DỌC & HERO CAROUSEL */}
+      <section className="container mx-auto px-4 mt-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch relative">
+          
+          {/* MENU DANH MỤC DỌC (Chiếm 3 cột trên Desktop) */}
+          <aside 
+            onMouseLeave={() => setHoveredCategory(null)}
+            className="lg:col-span-3 bg-card border border-border rounded-2xl p-3 flex flex-col justify-between relative z-30 shadow-sm hidden lg:flex"
+          >
+            <div className="space-y-0.5 relative">
+              {sidebarItems.map((item) => {
+                const Icon = item.icon;
+                const isHovered = hoveredCategory === item.slug;
+                
+                return (
+                  <div
+                    key={item.slug}
+                    onMouseEnter={() => {
+                      if (MEGA_MENU_DATA[item.slug]) {
+                        setHoveredCategory(item.slug);
+                      } else {
+                        setHoveredCategory(null);
+                      }
+                    }}
+                    className={`flex items-center justify-between px-3.5 py-3 rounded-xl cursor-pointer transition-all border border-transparent ${
+                      isHovered
+                        ? 'bg-primary/10 border-primary/20 text-primary font-bold'
+                        : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Icon className={`w-4 h-4 flex-shrink-0 ${isHovered ? 'text-primary' : 'text-muted-foreground'}`} />
+                      <span className="text-xs font-semibold">{item.name}</span>
+                    </div>
+                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/60" />
+                  </div>
+                );
+              })}
 
-      {/* 2. DANH MỤC SẢN PHẨM NỔI BẬT */}
-      <section className="container mx-auto px-4">
-        <div className="text-center mb-10">
-          <h2 className="text-2xl md:text-3xl font-extrabold text-foreground mb-2">Tìm kiếm theo danh mục</h2>
-          <p className="text-muted-foreground text-xs md:text-sm">Khám phá các thiết bị công nghệ được tuyển chọn kỹ lưỡng</p>
-        </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          {[
-            { name: 'Laptop', slug: 'laptop', icon: Laptop, color: 'hover:border-primary/40' },
-            { name: 'Điện thoại', slug: 'phone', icon: Smartphone, color: 'hover:border-primary/40' },
-            { name: 'Đồng hồ', slug: 'smartwatch', icon: Watch, color: 'hover:border-primary/40' },
-            { name: 'Tai nghe', slug: 'earphone', icon: Headphones, color: 'hover:border-primary/40' },
-            { name: 'Phụ kiện', slug: 'accessory', icon: Layers, color: 'hover:border-primary/40' },
-          ].map((cat) => {
-            const Icon = cat.icon;
-            return (
-              <Link
-                key={cat.slug}
-                href={`/products?category=${cat.slug}`}
-                className={`p-6 rounded-2xl bg-card border border-border hover:-translate-y-1 active:translate-y-0 text-center flex flex-col items-center gap-4 transition-all duration-300 group ${cat.color}`}
-              >
-                <div className="p-4 rounded-xl bg-background text-muted-foreground group-hover:text-primary group-hover:scale-110 transition-all">
-                  <Icon className="w-6 h-6" />
+              {/* MEGA MENU BAY NGANG (Flyout Panel) */}
+              {hoveredCategory && MEGA_MENU_DATA[hoveredCategory] && (
+                <div 
+                  className="absolute top-0 left-full ml-4 w-[760px] min-h-full bg-card/95 backdrop-blur-md border border-border rounded-2xl shadow-2xl p-6 z-40 flex gap-8 animate-in fade-in slide-in-from-left-3 duration-200"
+                >
+                  {MEGA_MENU_DATA[hoveredCategory].columns.map((col, idx) => (
+                    <div key={idx} className="flex-1 flex flex-col gap-4">
+                      <h4 className="text-xs font-black uppercase text-foreground tracking-wider pb-2 border-b border-border/80 select-none">
+                        {col.title}
+                      </h4>
+                      <div className="flex flex-col gap-2">
+                        {col.items.map((subItem, sIdx) => (
+                          <Link
+                            key={sIdx}
+                            href={subItem.href}
+                            onClick={() => setHoveredCategory(null)}
+                            className="flex items-center justify-between text-xs font-semibold text-muted-foreground hover:text-primary hover:font-bold transition-all py-1.5 rounded-lg"
+                          >
+                            <span>{subItem.label}</span>
+                            {subItem.badge && (
+                              <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md ${
+                                subItem.badge === 'Hot' || subItem.badge === 'Bán chạy'
+                                  ? 'bg-red-500 text-white animate-pulse'
+                                  : 'bg-primary text-primary-foreground'
+                              }`}>
+                                {subItem.badge}
+                              </span>
+                            )}
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <span className="font-bold text-muted-foreground text-sm group-hover:text-foreground transition-colors">
-                  {cat.name}
-                </span>
-              </Link>
-            );
-          })}
+              )}
+            </div>
+          </aside>
+
+          {/* HERO CAROUSEL BANNER (Chiếm 9 cột trên Desktop) */}
+          <div className="lg:col-span-9 w-full overflow-hidden rounded-2xl border border-border bg-card shadow-sm flex flex-col justify-center min-h-[350px]">
+            <HeroCarousel />
+          </div>
+
         </div>
       </section>
 
-      {/* 3. SẢN PHẨM NỔI BẬT */}
+      {/* 2. SẢN PHẨM NỔI BẬT */}
       <section className="container mx-auto px-4">
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-8 border-b border-border/60 pb-3">
           <div>
-            <h2 className="text-xl md:text-2xl font-bold text-foreground">Sản phẩm bán chạy nhất</h2>
-            <p className="text-xs text-muted-foreground">Các mặt hàng có lượt mua cao và đánh giá xuất sắc</p>
+            <h2 className="text-xl md:text-2xl font-black text-foreground uppercase tracking-wide">
+              Sản phẩm bán chạy nhất
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5 font-medium">Các mặt hàng có lượt mua cao và đánh giá xuất sắc</p>
           </div>
-          <Link href="/products" className="flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline transition-all">
+          <Link href="/products" className="flex items-center gap-1.5 text-xs font-bold text-primary hover:underline transition-all">
             <span>Xem tất cả</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </Link>
@@ -257,17 +489,16 @@ export default function HomePage() {
         )}
       </section>
 
-      {/* 4. SẢN PHẨM MỚI */}
+      {/* 3. SẢN PHẨM MỚI */}
       <section className="container mx-auto px-4">
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-8 border-b border-border/60 pb-3">
           <div>
-            <h2 className="text-xl md:text-2xl font-bold text-foreground flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-primary" />
-              <span>Sản phẩm mới</span>
+            <h2 className="text-xl md:text-2xl font-black text-foreground uppercase tracking-wide">
+              Thiết bị số mới về
             </h2>
-            <p className="text-xs text-muted-foreground">Vừa lên kệ - Cập nhật những công nghệ mới nhất</p>
+            <p className="text-xs text-muted-foreground mt-0.5 font-medium">Các sản phẩm công nghệ đời mới nhất thị trường</p>
           </div>
-          <Link href="/products?sort=newest" className="flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline transition-all">
+          <Link href="/products" className="flex items-center gap-1.5 text-xs font-bold text-primary hover:underline transition-all">
             <span>Xem tất cả</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </Link>
@@ -281,10 +512,11 @@ export default function HomePage() {
           </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-            {(products.length > 4 ? products.slice(4, 8) : products.slice(0, 4)).map((prod) => renderProductCard(prod))}
+            {products.slice(4, 8).map((prod) => renderProductCard(prod))}
           </div>
         )}
       </section>
+
     </div>
   );
 }
