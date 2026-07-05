@@ -91,13 +91,30 @@ function ProductsContent() {
 
     // Lọc theo từ khóa tìm kiếm (q hoặc searchTerm)
     if (queryParam) {
-      const q = queryParam.toLowerCase();
-      result = result.filter(
-        (p) =>
-          p.name.toLowerCase().includes(q) ||
-          p.brand.toLowerCase().includes(q) ||
-          p.description.toLowerCase().includes(q)
-      );
+      const removeVietnameseTones = (str: string) => {
+        return str
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/đ/g, 'd')
+          .replace(/Đ/g, 'D')
+          .toLowerCase();
+      };
+
+      const qClean = removeVietnameseTones(queryParam.trim());
+      if (qClean) {
+        const queryWords = qClean.split(/\s+/).filter(Boolean);
+        result = result.filter((p) => {
+          const nameClean = removeVietnameseTones(p.name || '');
+          const brandClean = removeVietnameseTones(p.brand || '');
+          const descClean = removeVietnameseTones(p.description || '');
+          
+          const productWords = `${nameClean} ${brandClean} ${descClean}`.split(/[\s\-\/\,\.\(\)]+/).filter(Boolean);
+          
+          return queryWords.every(qw => 
+            productWords.some(pw => pw.startsWith(qw))
+          );
+        });
+      }
     }
 
     // Lọc theo danh mục (category)

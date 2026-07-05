@@ -1,23 +1,47 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useCart } from '@/store/useCart';
 import { supabase } from '@/lib/supabase';
-import { ShoppingCart, User, Search, Laptop, Smartphone, Watch, Headphones, Layers, Sun, Moon } from 'lucide-react';
+import { ShoppingCart, User, Search, Laptop, Smartphone, Watch, Headphones, Layers, Sun, Moon, X } from 'lucide-react';
+
+interface Product {
+  id: string;
+  name: string;
+  price: number;
+  images: string[];
+  category: string;
+  brand: string;
+}
+
+interface SuggestionItem {
+  name: string;
+  fullName: string;
+  image?: string;
+}
 
 export default function Header() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const shouldHideCategories = pathname?.startsWith('/account') || pathname?.startsWith('/policy') || pathname?.startsWith('/admin');
+  
   const [searchQuery, setSearchQuery] = useState(searchParams.get('q') || '');
   const [user, setUser] = useState<any>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [mounted, setMounted] = useState(false);
   const totalItems = useCart((state) => state.getTotalItems());
   
+  // States cho tính năng gợi ý tìm kiếm thông minh
+  const [isFocused, setIsFocused] = useState(false);
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [suggestions, setSuggestions] = useState<SuggestionItem[]>([]);
+  const [suggestedProducts, setSuggestedProducts] = useState<Product[]>([]);
+  
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     setMounted(true);
 
@@ -40,17 +64,123 @@ export default function Header() {
       setTheme(isDark ? 'dark' : 'light');
     }
 
+    // Tải trước toàn bộ sản phẩm để phục vụ tìm kiếm Dynamic Client-side siêu tốc
+    const fetchAllProducts = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('products')
+          .select('id, name, price, images, category, brand');
+        if (!error && data) {
+          setAllProducts(data);
+        }
+      } catch (err) {
+        console.warn('Lỗi tải danh sách sản phẩm gợi ý:', err);
+      }
+    };
+    fetchAllProducts();
+
     return () => {
       subscription.unsubscribe();
     };
   }, []);
 
+  // Xử lý click outside để ẩn popup tìm kiếm
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) {
+        setIsFocused(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Chuyển đổi tiếng Việt có dấu thành không dấu để tìm kiếm thông minh
+  const removeVietnameseTones = (str: string) => {
+    return str
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/Đ/g, 'D')
+      .toLowerCase();
+  };
+
+  // Trích xuất tên ngắn gọn (bỏ bớt phần dung lượng RAM/ROM để in popup gợi ý đẹp mắt)
+  const getShortName = (name: string) => {
+    const short = name.split(/(?:\d+GB|\d+TB|5G|4G|LTE|Chính hãng|xách tay|cũ|mới|RAM|ROM)/i)[0].trim();
+    if (short.length < 5) return name.substring(0, 25);
+    return short;
+  };
+
+  const handleSearchInputChange = (value: string) => {
+    setSearchQuery(value);
+    if (!value.trim()) {
+      setSuggestions([]);
+      setSuggestedProducts([]);
+      return;
+    }
+
+    const queryClean = removeVietnameseTones(value.trim());
+    const queryWords = queryClean.split(/\s+/).filter(Boolean);
+
+    // Lọc các sản phẩm khớp bằng thuật toán Word-Prefix Matching thông minh
+    const filtered = allProducts.filter(p => {
+      const nameClean = removeVietnameseTones(p.name || '');
+      const brandClean = removeVietnameseTones(p.brand || '');
+      const catClean = removeVietnameseTones(p.category || '');
+      
+      const productWords = `${nameClean} ${brandClean} ${catClean}`.split(/[\s\-\/\,\.\(\)]+/).filter(Boolean);
+      
+      return queryWords.every(qw => 
+        productWords.some(pw => pw.startsWith(qw))
+      );
+    });
+
+    // 1. Tạo danh sách "Sản phẩm gợi ý" (tối đa 5 sản phẩm)
+    setSuggestedProducts(filtered.slice(0, 5));
+
+    // 2. Tạo danh sách "Có phải bạn muốn tìm" (tên ngắn kèm ảnh thu nhỏ)
+    const sugMap = new Map<string, SuggestionItem>();
+    filtered.forEach(p => {
+      const shortName = getShortName(p.name);
+      if (!sugMap.has(shortName)) {
+        sugMap.set(shortName, {
+          name: shortName,
+          fullName: p.name,
+          image: p.images?.[0] || undefined
+        });
+      }
+    });
+    setSuggestions(Array.from(sugMap.values()).slice(0, 6)); // Tối đa 6 từ khóa gợi ý
+  };
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
+    setIsFocused(false);
     if (searchQuery.trim()) {
       router.push(`/products?q=${encodeURIComponent(searchQuery.trim())}`);
     } else {
       router.push('/products');
+    }
+  };
+
+  const handleSuggestionClick = (fullName: string) => {
+    setSearchQuery(fullName);
+    setIsFocused(false);
+    router.push(`/products?q=${encodeURIComponent(fullName)}`);
+  };
+
+  const clearSearch = () => {
+    setSearchQuery('');
+    setSuggestions([]);
+    setSuggestedProducts([]);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      setIsFocused(false);
     }
   };
 
@@ -73,6 +203,9 @@ export default function Header() {
     }
   };
 
+  const formatPrice = (price: number) =>
+    new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price);
+
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border bg-background/85 backdrop-blur-md transition-colors duration-200">
       <div className="container mx-auto px-4 h-16 flex items-center justify-between gap-4">
@@ -86,19 +219,108 @@ export default function Header() {
           </span>
         </Link>
 
-        {/* SEARCH BAR */}
-        <form onSubmit={handleSearch} className="hidden md:flex relative flex-1 max-w-md">
-          <input
-            type="text"
-            placeholder="Tìm kiếm sản phẩm, thương hiệu..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-10 pl-4 pr-10 rounded-full border border-border bg-card text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-sm transition-all"
-          />
-          <button type="submit" className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground transition-colors">
-            <Search className="w-5 h-5" />
-          </button>
-        </form>
+        {/* SEARCH BAR & SUGGESTION POPUP CONTAINER */}
+        <div ref={searchContainerRef} className="hidden md:block relative flex-1 max-w-md z-50">
+          <form onSubmit={handleSearch} className="relative w-full">
+            <input
+              type="text"
+              placeholder="Tìm kiếm sản phẩm, thương hiệu..."
+              value={searchQuery}
+              onFocus={() => setIsFocused(true)}
+              onChange={(e) => handleSearchInputChange(e.target.value)}
+              onKeyDown={handleKeyDown}
+              className="w-full h-10 pl-4 pr-16 rounded-full border border-border bg-card text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-sm transition-all shadow-inner"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={clearSearch}
+                title="Xóa tìm kiếm"
+                className="absolute right-10 top-2.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
+            <button type="submit" className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
+              <Search className="w-5 h-5" />
+            </button>
+          </form>
+
+          {/* DROPDOWN GỢI Ý THÔNG MINH */}
+          {isFocused && (suggestions.length > 0 || suggestedProducts.length > 0) && (
+            <div className="absolute top-full left-0 right-0 mt-2 bg-card/95 border border-border rounded-2xl shadow-2xl backdrop-blur-md overflow-hidden max-h-[420px] overflow-y-auto z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+              {/* 1. CÓ PHẢI BẠN MUỐN TÌM */}
+              {suggestions.length > 0 && (
+                <div className="p-4 border-b border-border/60">
+                  <div className="flex items-center gap-1.5 text-[10px] font-black uppercase text-muted-foreground tracking-wider mb-2.5 select-none">
+                    <Search className="w-3.5 h-3.5 text-primary" />
+                    <span>Có phải bạn muốn tìm</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {suggestions.map((item, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => handleSuggestionClick(item.fullName)}
+                        className="flex items-center gap-2 p-2 rounded-xl hover:bg-muted/70 cursor-pointer transition-all border border-transparent hover:border-border"
+                      >
+                        {item.image ? (
+                          <img src={item.image} alt={item.name} className="w-7 h-7 object-cover rounded-md flex-shrink-0 border border-border/40" />
+                        ) : (
+                          <Search className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                        )}
+                        <span className="text-xs font-semibold text-foreground truncate hover:text-primary transition-colors">
+                          {item.name}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 2. SẢN PHẨM GỢI Ý */}
+              {suggestedProducts.length > 0 && (
+                <div className="p-4 space-y-2.5">
+                  <div className="flex items-center gap-1.5 text-[10px] font-black uppercase text-muted-foreground tracking-wider mb-1 select-none">
+                    <span>🔥 Sản phẩm gợi ý</span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {suggestedProducts.map((p) => {
+                      const priceVal = p.price;
+                      const originalPrice = Math.round(priceVal * 1.25);
+                      return (
+                        <Link
+                          key={p.id}
+                          href={`/products/${p.id}`}
+                          onClick={() => setIsFocused(false)}
+                          className="flex items-center gap-3 p-2 rounded-xl hover:bg-muted/70 transition-all cursor-pointer group border border-transparent hover:border-border"
+                        >
+                          <img
+                            src={p.images?.[0] || 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=600'}
+                            alt={p.name}
+                            className="w-10 h-10 object-cover rounded-lg flex-shrink-0 border border-border"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <h4 className="text-xs font-extrabold text-foreground group-hover:text-primary transition-colors truncate">
+                              {p.name}
+                            </h4>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-xs font-black text-red-600 dark:text-red-500">
+                                {formatPrice(priceVal)}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground line-through">
+                                {formatPrice(originalPrice)}
+                              </span>
+                            </div>
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* NAVIGATION & ACTION BUTTONS */}
         <div className="flex items-center gap-3">
@@ -191,4 +413,3 @@ export default function Header() {
     </header>
   );
 }
-
