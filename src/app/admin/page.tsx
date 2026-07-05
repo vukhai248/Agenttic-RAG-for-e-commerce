@@ -37,6 +37,8 @@ interface Product {
   brand: string;
   name: string;
   price: number;
+  original_price?: number;
+  discount?: number;
   stock: number;
   description: string;
   specs: Record<string, string>;
@@ -102,7 +104,7 @@ const MOCK_TICKETS = [
 ];
 
 const emptyForm: Product = {
-  id: '', category: 'laptop', brand: '', name: '', price: 0, stock: 0, description: '',
+  id: '', category: 'laptop', brand: '', name: '', price: 0, original_price: 0, discount: 0, stock: 0, description: '',
   specs: {}, images: ['https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=600'], rating_avg: 5,
 };
 
@@ -727,11 +729,18 @@ export default function AdminPage() {
       }
     }
 
+    const discountVal = Number(formProduct.discount) || 0;
+    const originalPriceVal = discountVal > 0
+      ? Math.round(Number(formProduct.price) / (1 - discountVal / 100))
+      : (Number(formProduct.original_price) || Number(formProduct.price));
+
     const payload = {
       category: formProduct.category,
       brand: formProduct.brand,
       name: formProduct.name,
       price: Number(formProduct.price),
+      original_price: originalPriceVal,
+      discount: discountVal,
       stock: Number(formProduct.stock),
       description: formProduct.description,
       specs: specsObject,
@@ -2643,6 +2652,56 @@ export default function AdminPage() {
                           </div>
                         </div>
 
+                        {/* GIẢM GIÁ (DISCOUNT) */}
+                        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 space-y-2.5">
+                          <div className="flex items-center gap-2 justify-between">
+                            <label className="text-[11px] font-black text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                              🏷️ Giảm giá sản phẩm
+                            </label>
+                            <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-muted-foreground">
+                              <input
+                                type="checkbox"
+                                checked={(formProduct.discount || 0) > 0}
+                                onChange={(e) => setFormProduct({ ...formProduct, discount: e.target.checked ? 10 : 0 })}
+                                className="w-3 h-3 rounded accent-amber-500 cursor-pointer"
+                              />
+                              Bật giảm giá
+                            </label>
+                          </div>
+                          {(formProduct.discount || 0) > 0 && (
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-semibold text-muted-foreground">% Giảm (0–100)</label>
+                                <input
+                                  type="number"
+                                  min={1} max={99}
+                                  value={formProduct.discount || 0}
+                                  onChange={(e) => setFormProduct({ ...formProduct, discount: Math.min(99, Math.max(0, Number(e.target.value))) })}
+                                  className="w-full h-9 px-2.5 rounded-lg border border-amber-500/40 bg-background text-foreground text-xs focus:outline-none focus:border-amber-500 transition-colors"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-semibold text-muted-foreground">Giá gốc (tự tính)</label>
+                                <input
+                                  type="text"
+                                  readOnly
+                                  value={(formProduct.discount || 0) > 0 && formProduct.price > 0
+                                    ? Math.round(formProduct.price / (1 - (formProduct.discount || 0) / 100)).toLocaleString('vi-VN') + ' đ'
+                                    : '—'}
+                                  className="w-full h-9 px-2.5 rounded-lg border border-border bg-muted text-muted-foreground text-xs cursor-not-allowed"
+                                />
+                              </div>
+                            </div>
+                          )}
+                          {(formProduct.discount || 0) > 0 && formProduct.price > 0 && (
+                            <p className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">
+                              → Giá hiển thị: {formProduct.price.toLocaleString('vi-VN')}đ
+                              &nbsp;← Gốc: {Math.round(formProduct.price / (1 - (formProduct.discount || 0) / 100)).toLocaleString('vi-VN')}đ
+                              &nbsp;(-{formProduct.discount}%)
+                            </p>
+                          )}
+                        </div>
+
                         <div className="space-y-1.5">
                           <label className="text-[11px] font-bold text-muted-foreground">Địa chỉ URL ảnh</label>
                           <input
@@ -4445,6 +4504,56 @@ export default function AdminPage() {
                     className="w-full h-11 px-4 rounded-xl border border-border bg-background text-foreground text-sm focus:outline-none focus:border-primary transition-colors"
                   />
                 </div>
+              </div>
+
+              {/* GIẢM GIÁ (MODAL FORM) */}
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-black text-amber-600 dark:text-amber-400 flex items-center gap-2">
+                    🏷️ Giảm giá sản phẩm
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={(formProduct.discount || 0) > 0}
+                      onChange={(e) => setFormProduct({ ...formProduct, discount: e.target.checked ? 10 : 0 })}
+                      className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
+                    />
+                    Bật giảm giá
+                  </label>
+                </div>
+                {(formProduct.discount || 0) > 0 && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted-foreground">% Giảm (0–100)</label>
+                      <input
+                        type="number"
+                        min={1} max={99}
+                        value={formProduct.discount || 0}
+                        onChange={(e) => setFormProduct({ ...formProduct, discount: Math.min(99, Math.max(0, Number(e.target.value))) })}
+                        className="w-full h-11 px-4 rounded-xl border border-amber-500/40 bg-background text-foreground text-sm focus:outline-none focus:border-amber-500 transition-colors"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted-foreground">Giá gốc (tự tính)</label>
+                      <input
+                        type="text"
+                        readOnly
+                        value={(formProduct.discount || 0) > 0 && formProduct.price > 0
+                          ? Math.round(formProduct.price / (1 - (formProduct.discount || 0) / 100)).toLocaleString('vi-VN') + ' đ'
+                          : '—'}
+                        className="w-full h-11 px-4 rounded-xl border border-border bg-muted text-muted-foreground text-sm cursor-not-allowed"
+                      />
+                    </div>
+                  </div>
+                )}
+                {(formProduct.discount || 0) > 0 && formProduct.price > 0 && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold">
+                    → Giá bán: <strong>{formProduct.price.toLocaleString('vi-VN')}đ</strong>
+                    &nbsp;← Gốc: <span className="line-through text-muted-foreground">{Math.round(formProduct.price / (1 - (formProduct.discount || 0) / 100)).toLocaleString('vi-VN')}đ</span>
+                    &nbsp;<span className="bg-amber-500 text-white px-1.5 py-0.5 rounded text-[10px] font-black">-{formProduct.discount}%</span>
+                  </p>
+                )}
               </div>
 
               <div className="space-y-1.5">
