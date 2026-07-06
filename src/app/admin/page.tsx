@@ -160,6 +160,7 @@ export default function AdminPage() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [formProduct, setFormProduct] = useState<Product>(emptyForm);
   const [discountEnabled, setDiscountEnabled] = useState(false);
+  const [discountInputStr, setDiscountInputStr] = useState<string>('');
   const [specRows, setSpecRows] = useState<SpecRow[]>([]);
   const [variantRows, setVariantRows] = useState<VariantRow[]>([]);
   const [colorRows, setColorRows] = useState<ColorRow[]>([]);
@@ -731,16 +732,16 @@ export default function AdminPage() {
     }
 
     const discountVal = discountEnabled ? (Number(formProduct.discount) || 0) : 0;
-    const originalPriceVal = discountVal > 0
-      ? Math.round(Number(formProduct.price) / (1 - discountVal / 100))
+    const finalPriceVal = discountVal > 0
+      ? Math.round(Number(formProduct.price) * (1 - discountVal / 100))
       : Number(formProduct.price);
 
     const payload = {
       category: formProduct.category,
       brand: formProduct.brand,
       name: formProduct.name,
-      price: Number(formProduct.price),
-      original_price: originalPriceVal,
+      price: finalPriceVal,
+      original_price: Number(formProduct.price),
       discount: discountVal,
       stock: Number(formProduct.stock),
       description: formProduct.description,
@@ -840,14 +841,18 @@ export default function AdminPage() {
     setSelectedPolicyTagIds([]);
     setNewPolicyVal('');
     setDiscountEnabled(false);
+    setDiscountInputStr('');
     setModalOpen(true);
   };
 
   // Mở modal sửa sản phẩm
   const openEditProduct = (p: Product) => {
     setEditingProduct(p);
-    setFormProduct({ ...p, discount: p.discount || 0, original_price: p.original_price || 0 });
-    setDiscountEnabled((p.discount || 0) > 0);
+    const hasDiscount = (p.discount || 0) > 0;
+    const formPrice = hasDiscount && p.original_price ? p.original_price : p.price;
+    setFormProduct({ ...p, price: formPrice, discount: p.discount || 0, original_price: p.original_price || p.price });
+    setDiscountEnabled(hasDiscount);
+    setDiscountInputStr(hasDiscount ? String(p.discount) : '');
 
 
     // Khởi tạo các mảng tag và specs mới
@@ -2667,8 +2672,15 @@ export default function AdminPage() {
                                 checked={discountEnabled}
                                 onChange={(e) => {
                                   setDiscountEnabled(e.target.checked);
-                                  if (e.target.checked && (formProduct.discount || 0) === 0) {
-                                    setFormProduct(prev => ({ ...prev, discount: 10 }));
+                                  if (e.target.checked) {
+                                    if ((formProduct.discount || 0) === 0) {
+                                      setFormProduct(prev => ({ ...prev, discount: 10 }));
+                                      setDiscountInputStr('10');
+                                    } else {
+                                      setDiscountInputStr(String(formProduct.discount));
+                                    }
+                                  } else {
+                                    setDiscountInputStr('');
                                   }
                                 }}
                                 className="w-3 h-3 rounded accent-amber-500 cursor-pointer"
@@ -2681,20 +2693,35 @@ export default function AdminPage() {
                               <div className="space-y-1">
                                 <label className="text-[10px] font-semibold text-muted-foreground">% Giảm (0–100)</label>
                                 <input
-                                  type="number"
-                                  min={1} max={99}
-                                  value={formProduct.discount || 0}
-                                  onChange={(e) => setFormProduct({ ...formProduct, discount: Math.min(99, Math.max(0, Number(e.target.value))) })}
+                                  type="text"
+                                  value={discountInputStr}
+                                  onChange={(e) => {
+                                    const valStr = e.target.value;
+                                    const normalized = valStr.replace(',', '.');
+                                    if (normalized === '' || /^[0-9]*\.?[0-9]*$/.test(normalized)) {
+                                      setDiscountInputStr(normalized);
+                                      if (normalized === '' || normalized === '.') {
+                                        setFormProduct(prev => ({ ...prev, discount: 0 }));
+                                      } else {
+                                        const num = parseFloat(normalized);
+                                        if (!isNaN(num)) {
+                                          const clamped = Math.min(100, Math.max(0, num));
+                                          setFormProduct(prev => ({ ...prev, discount: clamped }));
+                                        }
+                                      }
+                                    }
+                                  }}
+                                  placeholder="Ví dụ: 5.7"
                                   className="w-full h-9 px-2.5 rounded-lg border border-amber-500/40 bg-background text-foreground text-xs focus:outline-none focus:border-amber-500 transition-colors"
                                 />
                               </div>
                               <div className="space-y-1">
-                                <label className="text-[10px] font-semibold text-muted-foreground">Giá gốc (tự tính)</label>
+                                <label className="text-[10px] font-semibold text-muted-foreground">Giá sau giảm (tự tính)</label>
                                 <input
                                   type="text"
                                   readOnly
                                   value={discountEnabled && (formProduct.discount || 0) > 0 && formProduct.price > 0
-                                    ? Math.round(formProduct.price / (1 - (formProduct.discount || 0) / 100)).toLocaleString('vi-VN') + ' đ'
+                                    ? Math.round(formProduct.price * (1 - (formProduct.discount || 0) / 100)).toLocaleString('vi-VN') + ' đ'
                                     : '—'}
                                   className="w-full h-9 px-2.5 rounded-lg border border-border bg-muted text-muted-foreground text-xs cursor-not-allowed"
                                 />
@@ -2703,8 +2730,8 @@ export default function AdminPage() {
                           )}
                           {discountEnabled && (formProduct.discount || 0) > 0 && formProduct.price > 0 && (
                             <p className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">
-                              → Giá hiển thị: {formProduct.price.toLocaleString('vi-VN')}đ
-                              &nbsp;← Gốc: {Math.round(formProduct.price / (1 - (formProduct.discount || 0) / 100)).toLocaleString('vi-VN')}đ
+                              → Giá sau giảm: {Math.round(formProduct.price * (1 - (formProduct.discount || 0) / 100)).toLocaleString('vi-VN')}đ
+                              &nbsp;← Gốc niêm yết: {formProduct.price.toLocaleString('vi-VN')}đ
                               &nbsp;(-{formProduct.discount}%)
                             </p>
                           )}
@@ -4526,8 +4553,15 @@ export default function AdminPage() {
                       checked={discountEnabled}
                       onChange={(e) => {
                         setDiscountEnabled(e.target.checked);
-                        if (e.target.checked && (formProduct.discount || 0) === 0) {
-                          setFormProduct(prev => ({ ...prev, discount: 10 }));
+                        if (e.target.checked) {
+                          if ((formProduct.discount || 0) === 0) {
+                            setFormProduct(prev => ({ ...prev, discount: 10 }));
+                            setDiscountInputStr('10');
+                          } else {
+                            setDiscountInputStr(String(formProduct.discount));
+                          }
+                        } else {
+                          setDiscountInputStr('');
                         }
                       }}
                       className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
@@ -4540,20 +4574,35 @@ export default function AdminPage() {
                     <div className="space-y-1.5">
                       <label className="text-xs font-semibold text-muted-foreground">% Giảm (0–100)</label>
                       <input
-                        type="number"
-                        min={1} max={99}
-                        value={formProduct.discount || 0}
-                        onChange={(e) => setFormProduct({ ...formProduct, discount: Math.min(99, Math.max(0, Number(e.target.value))) })}
+                        type="text"
+                        value={discountInputStr}
+                        onChange={(e) => {
+                          const valStr = e.target.value;
+                          const normalized = valStr.replace(',', '.');
+                          if (normalized === '' || /^[0-9]*\.?[0-9]*$/.test(normalized)) {
+                            setDiscountInputStr(normalized);
+                            if (normalized === '' || normalized === '.') {
+                              setFormProduct(prev => ({ ...prev, discount: 0 }));
+                            } else {
+                              const num = parseFloat(normalized);
+                              if (!isNaN(num)) {
+                                const clamped = Math.min(100, Math.max(0, num));
+                                setFormProduct(prev => ({ ...prev, discount: clamped }));
+                              }
+                            }
+                          }
+                        }}
+                        placeholder="Ví dụ: 5.7"
                         className="w-full h-11 px-4 rounded-xl border border-amber-500/40 bg-background text-foreground text-sm focus:outline-none focus:border-amber-500 transition-colors"
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground">Giá gốc (tự tính)</label>
+                      <label className="text-xs font-semibold text-muted-foreground">Giá sau giảm (tự tính)</label>
                       <input
                         type="text"
                         readOnly
                         value={discountEnabled && (formProduct.discount || 0) > 0 && formProduct.price > 0
-                          ? Math.round(formProduct.price / (1 - (formProduct.discount || 0) / 100)).toLocaleString('vi-VN') + ' đ'
+                          ? Math.round(formProduct.price * (1 - (formProduct.discount || 0) / 100)).toLocaleString('vi-VN') + ' đ'
                           : '—'}
                         className="w-full h-11 px-4 rounded-xl border border-border bg-muted text-muted-foreground text-sm cursor-not-allowed"
                       />
@@ -4562,8 +4611,8 @@ export default function AdminPage() {
                 )}
                 {discountEnabled && (formProduct.discount || 0) > 0 && formProduct.price > 0 && (
                   <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold">
-                    → Giá bán: <strong>{formProduct.price.toLocaleString('vi-VN')}đ</strong>
-                    &nbsp;← Gốc: <span className="line-through text-muted-foreground">{Math.round(formProduct.price / (1 - (formProduct.discount || 0) / 100)).toLocaleString('vi-VN')}đ</span>
+                    → Giá bán: <strong>{Math.round(formProduct.price * (1 - (formProduct.discount || 0) / 100)).toLocaleString('vi-VN')}đ</strong>
+                    &nbsp;← Gốc niêm yết: <span className="line-through text-muted-foreground">{formProduct.price.toLocaleString('vi-VN')}đ</span>
                     &nbsp;<span className="bg-amber-500 text-white px-1.5 py-0.5 rounded text-[10px] font-black">-{formProduct.discount}%</span>
                   </p>
                 )}
