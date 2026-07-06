@@ -79,6 +79,17 @@ function CheckoutSuccessContent() {
               console.error('Lỗi khi ghi nhận đơn hàng Stripe vào DB:', error);
             } else if (newOrder) {
               setOrderId(newOrder.id);
+              // Trừ tồn kho (stock) của sản phẩm
+              for (const item of tempItems) {
+                try {
+                  const { data: prod } = await supabase.from('products').select('stock').eq('id', item.id).single();
+                  if (prod) {
+                    await supabase.from('products').update({ stock: Math.max(0, prod.stock - item.quantity) }).eq('id', item.id);
+                  }
+                } catch (stockErr) {
+                  console.error(`Không thể trừ tồn kho của sản phẩm ${item.id}:`, stockErr);
+                }
+              }
             }
           }
         } catch (e) {

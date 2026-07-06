@@ -312,6 +312,18 @@ export default function CheckoutPage() {
           throw new Error('Lỗi ghi đơn hàng vào cơ sở dữ liệu: ' + error.message);
         }
 
+        // Trừ tồn kho (stock) của sản phẩm
+        for (const item of items) {
+          try {
+            const { data: prod } = await supabase.from('products').select('stock').eq('id', item.id).single();
+            if (prod) {
+              await supabase.from('products').update({ stock: Math.max(0, prod.stock - item.quantity) }).eq('id', item.id);
+            }
+          } catch (stockErr) {
+            console.error(`Không thể trừ tồn kho của sản phẩm ${item.id}:`, stockErr);
+          }
+        }
+
         // Xóa giỏ hàng và chuyển hướng về trang success
         clearCart();
         router.push(`/checkout-success?status=cod&user_id=${targetUserId}&address=${encodeURIComponent(shippingAddressText)}`);
