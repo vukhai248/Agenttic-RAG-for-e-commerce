@@ -11,7 +11,7 @@ generation:
   temperature: 1.0
   max_tokens: 4096
   top_p: 1.0
-  reasoning_effort: low # default/none for qwen 3.6 27b; low/medium/high for gpt oss 120b
+  reasoning_effort: HIGH # default/none for qwen 3.6 27b; low/medium/high for gpt oss 120b
   stream: True
   stop: 
 
