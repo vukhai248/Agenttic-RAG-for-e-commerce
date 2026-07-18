@@ -8,23 +8,28 @@ retrieval:
   rrf_k: 60 # smoothing constant for Reciprocal Rank Fusion
 
 generation:
-  temperature: 0.0
-  max_tokens: 2048
+  temperature: 1.0
+  max_tokens: 4096
+  top_p: 1.0
+  reasoning_effort: low # default/none for qwen 3.6 27b; low/medium/high for gpt oss 120b
+  stream: True
+  stop: 
 
-# Catalog model cho từng nhà cung cấp
-# - 'available': Danh sách model bạn có thể dùng để benchmark
-# - 'router.active' / 'qa.active': Model đang được dùng thực tế (chỉ cần sửa dòng này để benchmark)
+
+
+# Catalog cấu hình chi tiết cho từng Model của mỗi nhà cung cấp
+
 llm:
   google:
     available:
-      - "gemini-2.5-flash"
-      - "gemini-2.5-pro"
+      - "gemini-3.1-flash-lite"
+      - "gemma-4-26b-a4b-it"
     
   groq:
     available:
-      - "llama-3.3-70b-specdec"
-      - "qwen-qwq-32b"
-      - "meta-llama/llama-4-scout-17b-16e-instruct"
+      - "qwen/qwen3.6-27b"
+      - "openai/gpt-oss-120b"
+      - "openai/gpt-oss-20b"
 
   openrouter:
     available:
@@ -32,15 +37,16 @@ llm:
       - "meta-llama/llama-3.3-70b-instruct:free"
       - "qwen/qwen3-235b-a22b:free"
 
-  # Model đang hoạt động cho từng tác vụ
-  # Chỉ cần thay đổi 'provider' và 'model' ở đây để benchmark
+
+  # Cấu hình chỉ định model đang chạy thực tế cho từng tác vụ
+  # Chỉ cần thay đổi 'provider' và 'model_key' ở đây để benchmark
   router:
     provider: "groq"
-    model: "llama-3.3-70b-specdec"
+    model_key: "qwen3_6_27b"
 
   qa:
-    provider: "openrouter"
-    model: "google/gemini-2.5-flash"
+    provider: "groq"
+    model_key: "gpt_oss_20b"
 
 embedding:
   available:
@@ -48,4 +54,3 @@ embedding:
     - "text-embedding-3-small"                       # OpenAI, 1536 dims
     - "intfloat/multilingual-e5-large"               # Offline local, 1024 dims
   active: "nvidia/llama-nemotron-embed-vl-1b-v2:free"  # Model đang dùng thực tế
-

@@ -19,6 +19,8 @@ class EmbeddingService:
         # Ưu tiên: tham số 'model' truyền tay > config.yaml > fallback mặc định
         if model:
             self.model = model
+        elif config and hasattr(config, 'embedding') and hasattr(config.embedding, 'active'):
+            self.model = config.embedding.active
         elif config and hasattr(config, 'embedding_model'):
             self.model = config.embedding_model
         else:
