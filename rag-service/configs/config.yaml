@@ -1,0 +1,51 @@
+chunking:
+  chunk_size: 1000
+  chunk_overlap: 200
+
+retrieval:
+  k: 5
+  graph_max_hops: 2 # number of traversal hops for graph retrieval
+  rrf_k: 60 # smoothing constant for Reciprocal Rank Fusion
+
+generation:
+  temperature: 0.0
+  max_tokens: 2048
+
+# Catalog model cho từng nhà cung cấp
+# - 'available': Danh sách model bạn có thể dùng để benchmark
+# - 'router.active' / 'qa.active': Model đang được dùng thực tế (chỉ cần sửa dòng này để benchmark)
+llm:
+  google:
+    available:
+      - "gemini-2.5-flash"
+      - "gemini-2.5-pro"
+    
+  groq:
+    available:
+      - "llama-3.3-70b-specdec"
+      - "qwen-qwq-32b"
+      - "meta-llama/llama-4-scout-17b-16e-instruct"
+
+  openrouter:
+    available:
+      - "google/gemini-2.5-flash"
+      - "meta-llama/llama-3.3-70b-instruct:free"
+      - "qwen/qwen3-235b-a22b:free"
+
+  # Model đang hoạt động cho từng tác vụ
+  # Chỉ cần thay đổi 'provider' và 'model' ở đây để benchmark
+  router:
+    provider: "groq"
+    model: "llama-3.3-70b-specdec"
+
+  qa:
+    provider: "openrouter"
+    model: "google/gemini-2.5-flash"
+
+embedding:
+  available:
+    - "nvidia/llama-nemotron-embed-vl-1b-v2:free"  # Vision-Language, 2048 dims, đang dùng
+    - "text-embedding-3-small"                       # OpenAI, 1536 dims
+    - "intfloat/multilingual-e5-large"               # Offline local, 1024 dims
+  active: "nvidia/llama-nemotron-embed-vl-1b-v2:free"  # Model đang dùng thực tế
+

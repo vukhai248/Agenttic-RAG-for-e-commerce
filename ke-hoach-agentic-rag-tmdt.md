@@ -16,24 +16,24 @@
 │   - Trang TMĐT           │ ──────► │   (FastAPI - Python)     │
 │   - Popup chat hỗ trợ    │ ◄────── │   - Agent controller     │
 └───────────┬──────────────┘         │   - Tools (RAG, DB, ...) │
-            │                        └─────────────┬─────────────┘
-            │ REST API                              │
-            ▼                                       ▼
-┌───────────────────────────────────────────────────────────────────┐
-│                  SUPABASE (Postgres + pgvector)                    │
-│  - Bảng quan hệ: products, orders, reviews, support_tickets,      │
-│    chat_logs → tra cứu chính xác (query SQL trực tiếp, KHÔNG qua  │
-│    vector search — đơn hàng, tồn kho, giá...)                     │
-│  - Cột `embedding` (pgvector) trong products/policy_chunks →      │
-│    tìm kiếm ngữ nghĩa (cùng 1 DB, không cần pipeline đồng bộ)     │
-│  - Auth (email + Google), Storage (ảnh sản phẩm)                  │
-└───────────────────────────────────────────────────────────────────┘
+            │                        └──────┬───────────┬────────┘
+            │ REST API                      │           │
+            ▼                               ▼           ▼
+┌────────────────────────────────┐  ┌──────────────────────────┐
+│  SUPABASE (Postgres)           │  │  CHROMA (Vector Store)    │
+│  - Bảng quan hệ: products,     │  │  - Embedding sản phẩm     │
+│    orders, reviews,             │  │  - Embedding chính sách   │
+│    support_tickets, chat_logs  │  │  → Tìm kiếm ngữ nghĩa    │
+│  → Tra cứu chính xác           │  │    (cosine similarity)    │
+│    (SQL trực tiếp, KHÔNG qua   │  └──────────────────────────┘
+│    vector search — đơn hàng,   │           ▲
+│    tồn kho, giá...)            │           │ sync (script
+│  - Auth (email + Google)       │           │ offline, chạy
+│  - Storage (ảnh sản phẩm)      │───────────┘ khi đổi data)
+└────────────────────────────────┘
 
-(*) Tuỳ chọn benchmark (mục 3.2): có thể thêm Vector DB riêng (Chroma/
-    FAISS) chạy song song để so sánh hiệu năng/độ chính xác. Khi đó
-    Postgres là nguồn gốc (source of truth), Chroma/FAISS là bản sao —
-    cần 1 script đồng bộ (không cần real-time, chạy lại khi đổi dữ
-    liệu sản phẩm là đủ cho quy mô đồ án).
+(*) Tuỳ chọn benchmark (mục 3.2): thêm FAISS / pgvector chạy song
+    song để so sánh hiệu năng/độ chính xác với Chroma.
 ```
 
 **Vì sao tách như vậy:**
@@ -42,9 +42,9 @@
 - Agentic RAG là 1 service Python độc lập (FastAPI), giao tiếp với web qua 1 API endpoint duy nhất (`/chat`) — tách biệt hoàn toàn, dễ phát triển/test độc lập, không phụ thuộc vào việc web có sửa đổi hay không.
 - **Nguyên tắc định tuyến dữ liệu (quan trọng)**: không phải mọi truy vấn đều cần vector DB — phân loại theo loại truy vấn trước:
   - **Tra cứu chính xác** (đơn hàng, tồn kho, giá, xác thực user) → query SQL trực tiếp vào Supabase Postgres, **bỏ qua vector search hoàn toàn**.
-  - **Tìm kiếm ngữ nghĩa** (mô tả sản phẩm, chính sách) → cần vector search.
-- **Mặc định dùng `pgvector`** (extension vector ngay trong Supabase Postgres) thay vì Chroma/FAISS riêng — vì embedding nằm cùng bảng với dữ liệu gốc nên **không tồn tại vấn đề đồng bộ**, đồng thời cho phép viết 1 câu SQL vừa lọc cứng (giá, danh mục) vừa tìm ngữ nghĩa cùng lúc (chính là Hybrid Retrieval ở mục 3.3). Đây là lựa chọn an toàn nhất cho 1 người làm, ít thời gian, không rành devops.
-- Chroma/FAISS riêng chỉ nên dùng nếu đề tài cần **benchmark so sánh nhiều loại vector store** (mục 3.2) — không phải yêu cầu bắt buộc.
+  - **Tìm kiếm ngữ nghĩa** (mô tả sản phẩm, chính sách) → cần vector search (Chroma).
+- **Mặc định dùng Chroma** làm vector store chính — pipeline RAG rõ ràng từng bước (chunk → embed → index → query), dễ thay đổi strategy để benchmark, dễ trình bày trong báo cáo. Dữ liệu gốc vẫn nằm trong Supabase Postgres (source of truth), Chroma là bản copy đã được embedding, đồng bộ bằng script offline.
+- pgvector / FAISS có thể thêm sau để **benchmark so sánh** vector store (mục 3.2) — không phải phương án chính.
 
 ---
 
@@ -208,13 +208,224 @@ Ngoài `products`, cần thêm 5 bảng phục vụ RAG:
 - **Guardrail chống bịa (quan trọng)**: sau khi `product_search_tool`/`policy_rag_tool` trả kết quả, agent phải tự đánh giá độ liên quan trước khi dùng để trả lời — nếu không tìm thấy tài liệu phù hợp, phải trả lời "mình chưa tìm thấy thông tin này, bạn có thể liên hệ nhân viên qua nút bên dưới" thay vì bịa ra thông tin (đây chính là ý tưởng Corrective RAG đã thảo luận trước đó — tự chấm điểm tài liệu tìm được rồi mới quyết định trả lời hay gọi lại/escalate).
 - **Xác thực trước khi tra đơn hàng**: `order_lookup_tool` chỉ chạy được nếu agent nhận được token/user_id hợp lệ từ frontend gửi kèm — tránh lộ thông tin đơn hàng người khác.
 
+### 2.3.1 Nguyên tắc định tuyến truy vấn (Query Routing) — Không phải mọi thứ đều cần Vector DB
+
+> ⚠️ **Đây là nguyên tắc quan trọng nhất của kiến trúc** — nhiều người mới làm RAG hay bị rối chỗ này, cứ đẩy mọi truy vấn qua vector search dẫn đến chậm, sai, phức tạp không cần thiết.
+
+**Quy tắc cốt lõi: phân loại truy vấn trước, mới quyết định đi đâu.**
+
+```
+                    ┌─────────────────────────┐
+                    │   Câu hỏi từ khách      │
+                    └────────────┬────────────┘
+                                 │ Agent (LLM) chọn tool
+              ┌──────────────────┴──────────────────────┐
+              ▼                                          ▼
+┌───────────────────────────┐         ┌───────────────────────────┐
+│  Loại 1: SQL trực tiếp    │         │  Loại 2: Vector search    │
+│                           │         │                           │
+│  Dữ liệu KHÔNG có trong  │         │  Dữ liệu ĐÃ embed sẵn   │
+│  Chroma:                  │         │  trong Chroma:            │
+│  - Đơn hàng (orders)      │         │  - Sản phẩm (giá, specs,  │
+│  - Lịch sử mua hàng      │         │    giảm giá, mô tả...)    │
+│  - Thông tin tài khoản    │         │  - Chính sách (đổi trả,   │
+│  - Tạo ticket/đánh giá    │         │    bảo hành, vận chuyển)  │
+│  (thao tác GHI vào DB)    │         │                           │
+└─────────────┬─────────────┘         └─────────────┬─────────────┘
+              ▼                                      ▼
+ ┌──────────────────────┐             ┌──────────────────────────┐
+ │  Supabase Postgres   │             │  Chroma (vector DB)      │
+ │  → Hàm Python có SQL │             │  → cosine similarity     │
+ │    viết sẵn bên trong │             │    trả về top-k kết quả  │
+ └──────────────────────┘             └──────────────────────────┘
+              └──────────────────┬──────────────────┘
+                                 ▼
+                    ┌──────────────────────────┐
+                    │  LLM tổng hợp kết quả    │
+                    │  → sinh câu trả lời      │
+                    └──────────────────────────┘
+```
+
+> **Lưu ý quan trọng:** LLM **KHÔNG** tự viết SQL hay truy cập DB. Bạn viết sẵn các hàm Python (tools) có logic SQL/Chroma bên trong. LLM chỉ **chọn gọi tool nào** và **truyền tham số** (ví dụ: `order_lookup_tool(order_id="ORD-123")`). Tool chạy xong trả kết quả lại cho LLM tổng hợp câu trả lời. Đây là cơ chế **function calling** — cốt lõi của "Agentic" RAG.
+
+#### Loại 1 — SQL trực tiếp (dữ liệu không nằm trong Chroma)
+
+Áp dụng cho: dữ liệu **riêng tư theo user** (đơn hàng, tài khoản) và **thao tác ghi** (tạo ticket, đánh giá).
+
+Những dữ liệu này không được embed vào Chroma vì: (1) thuộc về từng user riêng, cần xác thực, (2) thay đổi liên tục (đơn hàng mới mỗi ngày), (3) là thao tác ghi chứ không phải tìm kiếm.
+
+| Tool | Câu hỏi ví dụ | Cách xử lý |
+|---|---|---|
+| `order_lookup_tool` | "Đơn hàng ORD-123 ở đâu rồi?" | SQL: `WHERE id = 'ORD-123' AND user_id = $user` |
+| `order_lookup_tool` | "Tôi đã mua gì tháng trước?" | SQL: `WHERE user_id = $user AND created_at > ...` |
+| `escalate_tool` | "Tôi muốn khiếu nại" | SQL INSERT vào `support_tickets` |
+
+#### Loại 2 — Vector search (dữ liệu đã embed sẵn trong Chroma)
+
+Áp dụng cho: **tất cả câu hỏi về sản phẩm** (kể cả hỏi cụ thể giá/giảm giá) và **chính sách**.
+
+Vì text embed trong Chroma đã chứa đầy đủ thông tin (tên, giá, giảm giá, specs, mô tả...), nên câu hỏi cụ thể ("S22 bao nhiêu tiền?") cũng được vector search xử lý tốt — nó tìm đúng sản phẩm S22, LLM đọc context và trích xuất giá.
+
+| Tool | Câu hỏi ví dụ | Cách xử lý |
+|---|---|---|
+| `product_search_tool` | "Laptop mỏng nhẹ pin trâu" | Chroma: tìm ngữ nghĩa, trả top-5 |
+| `product_search_tool` | "Samsung S22 bao nhiêu tiền?" | Chroma: tìm đúng S22, LLM đọc giá từ context |
+| `product_search_tool` | "S22 có giảm giá không?" | Chroma: tìm S22, LLM đọc discount từ context |
+| `product_compare_tool` | "So sánh iPhone 15 và S24" | Chroma: tìm 2 SP, LLM so sánh specs |
+| `policy_rag_tool` | "Chính sách đổi trả thế nào?" | Chroma: tìm chunk chính sách liên quan |
+
+> **Tại sao câu hỏi cụ thể cũng dùng vector?** Vì text embed đã bao gồm tất cả info sản phẩm. Khi hỏi "S22 bao nhiêu tiền?", vector search match "S22" → trả về document chứa `"... Giá: 16,000,000đ. Giảm giá: 5%..."` → LLM trích xuất thông tin cần thiết. Không cần SQL riêng cho câu hỏi kiểu này.
+
+---
+
+#### Pipeline RAG có 2 giai đoạn tách biệt (quan trọng!)
+
+> ⚠️ **Chunking/embedding KHÔNG xảy ra khi khách hỏi.** Nó xảy ra TRƯỚC ĐÓ, chạy 1 lần offline.
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GIAI ĐOẠN 1: CHUẨN BỊ (OFFLINE — chạy 1 LẦN, khi dữ liệu thay đổi)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Supabase DB          Script Python (sync_data.py)
+  ┌──────────┐  query  ┌────────────────────────────────────┐
+  │ products │ ──────► │ 1. Đọc data từ DB                  │
+  │ policies │         │ 2. Ghép JSON→text / chunk văn bản   │
+  └──────────┘         │ 3. Embed (model do BẠN chọn)       │
+                       │ 4. Lưu vector vào Chroma           │
+                       └─────────────────┬──────────────────┘
+                                         ▼
+                       ┌──────────────────────────┐
+                       │  Chroma (vector DB)       │
+                       │  Đã có sẵn 800+ vectors   │
+                       │  NGỒI CHỜ truy vấn       │
+                       └──────────────────────────┘
+  → Xong. Script nghỉ. Chạy lại khi thêm/sửa sản phẩm.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GIAI ĐOẠN 2: PHỤC VỤ (ONLINE — mỗi khi khách hàng hỏi)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Khách: "Có laptop mỏng nhẹ pin trâu dưới 20 triệu không?"
+         │
+         ▼
+  Bước 1: Embed CÂU HỎI (chỉ 1 câu ngắn, vài ms)
+         │
+         ▼
+  Bước 2: Tìm trong Chroma bằng cosine similarity → top-5
+         │
+         ▼
+  Bước 3: Đưa top-5 + câu hỏi cho LLM → sinh câu trả lời
+```
+
+#### Xử lý 2 loại dữ liệu khác nhau
+
+| | Sản phẩm (JSON) | Chính sách (văn bản dài) |
+|---|---|---|
+| Kích thước | ~200-500 từ/sản phẩm | ~1000-3000 từ/tài liệu |
+| Cần chunk? | **KHÔNG** — 1 SP = 1 chunk | **CÓ** — split 200-400 từ/chunk |
+| Cách xử lý | Ghép JSON → text → embed | Split text → embed từng chunk |
+| Lưu trong Chroma | 1 document/sản phẩm | Nhiều document/tài liệu |
+
+**Sản phẩm (JSON → text, không cần chunk):**
+```python
+def product_to_text(p):
+    specs = ", ".join(f"{k}: {v}" for k, v in p["specs"].items()) if p.get("specs") else ""
+    return f"{p['name']} - {p['brand']} - {p['category']}. {p['description']}. Thông số: {specs}. Giá: {p['price']:,}đ"
+```
+
+**Chính sách (văn bản dài → cần chunk):**
+```python
+def chunk_policy(text, chunk_size=300, overlap=50):
+    words = text.split()
+    chunks = []
+    for i in range(0, len(words), chunk_size - overlap):
+        chunk = " ".join(words[i:i + chunk_size])
+        if chunk: chunks.append(chunk)
+    return chunks
+```
+
+---
+
+#### Vector store: Chroma (chính) + pgvector/FAISS (benchmark)
+
+##### ✅ Chroma — vector store chính (đã chọn)
+
+**Lý do chọn Chroma làm mặc định thay vì pgvector:**
+- Pipeline RAG **rõ ràng từng bước** (chunk → embed → index → query), dễ trình bày trong báo cáo
+- Dễ **thay đổi chunking strategy** để benchmark (chunk_size, overlap, field-based vs whole-doc)
+- Dễ **swap embedding model** (chỉ đổi model, chạy lại script sync)
+- Dễ **swap vector store backend** (đổi sang FAISS/pgvector để so sánh)
+- API Python gọn (`collection.query()`), phù hợp người chuyên Python
+- Supabase Postgres vẫn là **source of truth** (dữ liệu gốc), Chroma là bản copy đã embedding
+
+```python
+# sync_data.py — Script đồng bộ (chạy 1 lần khi data thay đổi)
+from sentence_transformers import SentenceTransformer
+import chromadb
+
+model = SentenceTransformer("intfloat/multilingual-e5-large")
+chroma = chromadb.PersistentClient(path="./chroma_db")
+
+# === Collection sản phẩm ===
+prod_collection = chroma.get_or_create_collection("products")
+products = supabase.table("products").select("*").execute().data
+texts = [product_to_text(p) for p in products]  # Ghép JSON→text (không chunk)
+embeddings = model.encode(texts)
+prod_collection.upsert(
+    ids=[p["id"] for p in products],
+    documents=texts,
+    embeddings=embeddings.tolist(),
+    metadatas=[{"price": p["price"], "category": p["category"], "brand": p["brand"]} for p in products]
+)
+
+# === Collection chính sách ===
+policy_collection = chroma.get_or_create_collection("policies")
+policies = load_policy_files()  # Đọc 3-5 file chính sách
+for doc in policies:
+    chunks = chunk_policy(doc["content"])  # Chunk vì văn bản dài
+    chunk_embeddings = model.encode(chunks)
+    policy_collection.upsert(
+        ids=[f"{doc['id']}_chunk_{i}" for i in range(len(chunks))],
+        documents=chunks,
+        embeddings=chunk_embeddings.tolist()
+    )
+print("✅ Đồng bộ xong!")
+```
+
+##### Cách 2 (benchmark): pgvector / FAISS
+
+Thêm sau khi Chroma đã chạy ổn, **dùng cùng pipeline chunk+embed**, chỉ đổi nơi lưu:
+- **pgvector**: embedding lưu ngay trong Supabase Postgres (cột `embedding`), cho phép Hybrid Retrieval trong 1 câu SQL
+- **FAISS**: lưu in-memory, truy vấn rất nhanh, phù hợp benchmark tốc độ
+- So sánh trên cùng bộ test: latency, recall@k, precision
+
+---
+
+#### Tóm tắt quyết định kiến trúc
+
+| Vấn đề | Quyết định | Lý do |
+|---|---|---|
+| Đơn hàng / lịch sử mua / tài khoản | SQL trực tiếp Supabase (Loại 1) | Dữ liệu riêng tư theo user, không nằm trong Chroma |
+| Tạo ticket / đánh giá / thao tác ghi | SQL trực tiếp Supabase (Loại 1) | Thao tác ghi DB, không phải tìm kiếm |
+| Tất cả câu hỏi về sản phẩm (kể cả giá, giảm giá, specs cụ thể) | **Chroma** vector search (Loại 2) | Text embed chứa đầy đủ info, vector tìm đúng SP → LLM trích xuất |
+| Hỏi chính sách | **Chroma** vector search (Loại 2) | Chunk → embed → query, tương tự sản phẩm |
+| Embedding model | Tự chọn (e5-large, BGE-M3...) | Supabase/Chroma KHÔNG có model embed sẵn, phải tự embed |
+| Cơ chế LLM gọi tool | **Function calling** | LLM KHÔNG tự viết SQL, chỉ chọn tool + truyền tham số |
+| Benchmark vector store | Thêm pgvector + FAISS (mục 3.2) | So sánh latency/recall giữa 3 backend |
+
 ### 2.4 Dữ liệu cần chuẩn bị riêng cho RAG
 
-1. **Product catalog embedding**: lấy trường `description` + `specs` từ Supabase, tạo embedding, lưu **ngay vào cột `embedding` của bảng `products`** (pgvector — mặc định, xem mục 1.3) kèm các cột có sẵn (category, brand, price) để filter cứng kết hợp semantic search trong cùng 1 câu SQL.
-2. **Tài liệu chính sách**: tự viết 3–5 file (~1–2 trang mỗi file) cho: Chính sách đổi trả, Chính sách bảo hành, Chính sách vận chuyển, Câu hỏi thường gặp (FAQ). Chunk nhỏ (200–400 từ/chunk) rồi embedding, lưu vào bảng `policy_chunks` (mục 1.3).
+1. **Product catalog embedding** (OFFLINE, chạy 1 lần):
+   - Đọc toàn bộ sản phẩm từ Supabase Postgres
+   - Ghép các trường JSON (`name` + `brand` + `category` + `description` + `specs`) thành 1 đoạn text cho mỗi sản phẩm — **không cần chunk** vì mỗi sản phẩm đã đủ ngắn (~200-500 từ)
+   - Embed bằng model do bạn chọn (e.g. `multilingual-e5-large`)
+   - Lưu vector + metadata (price, category, brand) vào **Chroma** collection `products`
+2. **Tài liệu chính sách** (OFFLINE, chạy 1 lần):
+   - Tự viết 3–5 file (~1–2 trang mỗi file) cho: Chính sách đổi trả, Chính sách bảo hành, Chính sách vận chuyển, Câu hỏi thường gặp (FAQ)
+   - **Cần chunk** vì văn bản dài (~1000-3000 từ) — split thành đoạn 200–400 từ/chunk, có overlap 50 từ
+   - Embed từng chunk, lưu vào **Chroma** collection `policies`
 3. **Bộ câu hỏi test tự tạo** (30–50 câu, chia đều theo 7 tool ở trên) — dùng để đánh giá độ chính xác chọn tool + độ chính xác câu trả lời.
 
-> Nếu có làm nhánh benchmark so sánh vector store (mục 3.2), lặp lại bước 1–2 để ghi thêm dữ liệu vào Chroma/FAISS — dùng 1 script đồng bộ đơn giản (đọc từ Postgres, embed, ghi qua), không cần cơ chế real-time.
+> Toàn bộ pipeline trên nằm trong 1 script `sync_data.py`, chạy lại mỗi khi thêm/sửa sản phẩm hoặc cập nhật chính sách. Nếu benchmark vector store (mục 3.2), dùng **cùng pipeline** chunk+embed, chỉ đổi nơi lưu (Chroma → FAISS → pgvector).
 
 ### 2.5 API tích hợp với Web
 
