@@ -29,6 +29,8 @@ class DataFormatter:
                 
         return None, None, None
     
+
+
     def format_product_to_text(self, prod: Dict[str, Any]) -> str:
         """
         Hàm phân tích object JSON sản phẩm và ghép nối thành một 
@@ -53,6 +55,8 @@ class DataFormatter:
         stock_text = f"Còn hàng ({stock} sản phẩm)" if stock > 0 else "Hết hàng"
         
         # 2. Phân tích và làm sạch phần thông số kỹ thuật (specs)
+
+        # Lấy thông số từ trường specs phụ, nếu specs rỗng thì lấy từ specs cấp 1
         specs_dict = prod.get("specs", {}) or {}
         
         # Vi xử lý (CPU, Chipset)
@@ -183,21 +187,21 @@ class DataFormatter:
             else:
                 specs_lines.append(f"- Kích thước thiết bị: {dimensions}")
                 
-        # Xử lý làm sạch dấu xuống dòng \n của Camera, Phụ kiện Cổng kết nối để văn bản nhúng liền mạch
+        # Xử lý làm sạch dấu xuống dòng \n của Camera, Phụ kiện, Cổng kết nối để văn bản nhúng liền mạch
         if camera_primary: 
-            specs_lines.append(f"- Camera chính (sau): {str(camera_primary).replace('\\n', ', ')}")
+            specs_lines.append(f"- Camera chính (sau): {str(camera_primary).replace('\n', ', ')}")
         if camera_secondary: 
-            specs_lines.append(f"- Camera phụ / Webcam: {str(camera_secondary).replace('\\n', ', ')}")
+            specs_lines.append(f"- Camera phụ / Webcam: {str(camera_secondary).replace('\n', ', ')}")
         if camera_video: 
-            specs_lines.append(f"- Tính năng quay phim: {str(camera_video).replace('\\n', ', ')}")
+            specs_lines.append(f"- Tính năng quay phim: {str(camera_video).replace('\n', ', ')}")
         if audio: 
-            specs_lines.append(f"- Công nghệ âm thanh: {str(audio).replace('\\n', ', ')}")
+            specs_lines.append(f"- Công nghệ âm thanh: {str(audio).replace('\n', ', ')}")
         if bluetooth: 
             specs_lines.append(f"- Kết nối Bluetooth: {bluetooth}")
         if wlan: 
             specs_lines.append(f"- Kết nối Wi-Fi: {wlan}")
         if ports_slots: 
-            specs_lines.append(f"- Cổng kết nối & khe cắm:\\n  {str(ports_slots).replace('\\n', '\\n  ')}")
+            specs_lines.append(f"- Cổng kết nối & khe cắm:\n  {str(ports_slots).replace('\n', '\n  ')}")
         if card_reader: 
             specs_lines.append(f"- Khe đọc thẻ nhớ: {card_reader}")
         if keyboard_backlight: 
@@ -215,27 +219,28 @@ class DataFormatter:
         if recommended_usage: 
             specs_lines.append(f"- Nhu cầu/Tác vụ tối ưu: {recommended_usage}")
         if product_state: 
-            specs_lines.append(f"- Tình trạng sản phẩm: {str(product_state).replace('\\n', ', ')}")
+            specs_lines.append(f"- Tình trạng sản phẩm: {str(product_state).replace('\n', ', ')}")
         if included_accessories: 
-            specs_lines.append(f"- Phụ kiện kèm theo trong hộp: {str(included_accessories).replace('\\n', ', ')}")
+            specs_lines.append(f"- Phụ kiện kèm theo trong hộp: {str(included_accessories).replace('\n', ', ')}")
 
-        specs_text = "\\n".join(specs_lines)
+        specs_text = "\n".join(specs_lines)
 
         # Ghép nối thành các đoạn văn bản lớn
         unified_text_parts = [
             f"Sản phẩm: {name}",
             f"Thương hiệu: {brand} | Danh mục: {category}",
-            f"Thông tin giá & Kho hàng:\\n- Giá thực tế: {price_text}\\n- Giá gốc niêm yết: {original_price_text}\\n- Mức giảm giá: {discount_text}\\n- Tình trạng: {stock_text}"
+            f"Thông tin giá & Kho hàng:\n- Giá thực tế: {price_text}\n- Giá gốc niêm yết: {original_price_text}\n- Mức giảm giá: {discount_text}\n- Tình trạng: {stock_text}"
         ]
         
         if specs_text:
-            unified_text_parts.append(f"Thông số kỹ thuật chi tiết:\\n{specs_text}")
+            unified_text_parts.append(f"Thông số kỹ thuật chi tiết:\n{specs_text}")
             
         if key_selling_points and key_selling_points.strip():
-            unified_text_parts.append(f"Đặc điểm nổi bật:\\n{key_selling_points.strip()}")
+            unified_text_parts.append(f"Đặc điểm nổi bật:\n{key_selling_points.strip()}")
             
         if description and description.strip():
-            unified_text_parts.append(f"Mô tả chi tiết sản phẩm:\\n{description.strip()}")
+            unified_text_parts.append(f"Mô tả chi tiết sản phẩm:\n{description.strip()}")
             
         # Nối tất cả các phần lại bằng dấu xuống dòng kép
-        return "\\n\\n".join(unified_text_parts)
+        return "\n\n".join(unified_text_parts)
+
