@@ -283,13 +283,42 @@ Dưới đây là danh sách đầy đủ các công cụ (Tools) được lập
 *   **Lý do có tool**: Tối ưu hóa hiệu suất làm việc của nhân viên hỗ trợ khách hàng.
 *   **Usecase thực tế**: Nhân viên tra cứu nhanh xem khách hàng gửi ticket khiếu nại có đủ điều kiện đổi trả máy theo chính sách hay không.
 
-### 2.3 Kiến trúc Agent & Chiến lược Guardrail (UI Navigation)
+### 2.3 Kiến trúc Đồ thị Đa Agent (Multi-Agent StateGraph Architecture)
 
-- **Agent controller (bộ não)**: 1 LLM có function calling tốt, đóng vai router — nhận câu hỏi, quyết định gọi tool nào (có thể gọi nhiều tool liên tiếp), tổng hợp kết quả trả lời.
-- **Vòng lặp xử lý**: nhận câu hỏi → agent chọn tool → thực thi tool → agent xem kết quả → quyết định: đủ thông tin để trả lời hay cần gọi thêm tool khác → trả lời cuối/hoặc lặp lại.
-- **Guardrail & Chuyển giao qua Nút UI (UI-Assisted Handover)**:
-  - *Không sinh Ticket rác tự động*: Thay vì để Agent tự động ghi ticket ngầm dưới DB, hệ thống áp dụng cơ chế chuyển giao thông minh qua giao diện Web UI.
-  - *Kịch bản kích hoạt*: Khi RAG không tìm thấy thông tin phù hợp, dữ liệu không ổn định, hoặc gặp các câu hỏi thuộc nhóm rủi ro/khiếu nại phức tạp (thương lượng giá, lỗi phần cứng, hoàn tiền), Agent sẽ kích hoạt Guardrail từ chối bịa đặt và lịch sự phản hồi: *"Vấn đề này cần sự hỗ trợ trực tiếp từ nhân viên CSKH, bạn vui lòng nhấn nút **[Tạo Ticket Hỗ Trợ]** ngay bên cạnh màn hình chat để đội ngũ tiếp nhận và xử lý ngay nhé!"*.
+Hệ thống Agentic RAG được thiết kế theo mô hình đồ thị trạng thái đa Agent (Multi-Agent StateGraph) phân tầng, giúp kiểm soát tuyệt đối 100% luồng xử lý và đảm bảo tính an toàn dữ liệu:
+
+```text
+                                    User Request
+                                         │
+                                         ▼
+                                  Authentication
+                           (Extract & Verify JWT Token)
+                                         │
+                                         ▼
+                              Intent Classification
+                                  (Router Node)
+                                         │
+               ┌─────────────────────────┼─────────────────────────┐
+               ▼                         ▼                         ▼
+        Product Domain             Policy Domain             User Account
+     (Public Catalog Tools)       (Public FAQ Tools)       (Protected Orders)
+               │                         │                         │
+               ▼                         ▼                         ▼
+    Hybrid Search / Stock          Policy Search            Order Lookup Service
+               │                         │                         │
+               ▼                         ▼                         ▼
+         Product Agent             Policy Agent              Account Agent
+               │                         │                         │
+               └─────────────────────────┼─────────────────────────┘
+                                         ▼
+                             Final Response Synthesizer
+                             (Guardrails & UI Navigation)
+```
+
+- **Authentication Node**: Kiểm tra JWT Token trong Header. Nếu có token ➡️ Đánh dấu `is_authenticated = True`. Nếu không có ➡️ Vẫn cho phép truy vấn thông tin công khai.
+- **Intent Classification (Router Node)**: Phân loại ý định khách hàng thành 3 miền chuyên trách (`product`, `policy`, `orders`).
+- **Domain Sub-Graphs**: Mỗi nhánh gọi đúng bộ tool trong thư mục tương ứng (`src/d_tools/product`, `src/d_tools/policy`, `src/d_tools/orders`).
+- **Guardrail & Chuyển giao qua Nút UI (UI-Assisted Handover)**: Khi RAG không tìm thấy thông tin phù hợp, dữ liệu không ổn định, hoặc gặp các câu hỏi rủi ro (thương lượng giá, lỗi phần cứng), Agent sẽ từ chối bịa đặt và lịch sự phản hồi: *"Vấn đề này cần sự hỗ trợ trực tiếp từ nhân viên CSKH, bạn vui lòng nhấn nút **[Tạo Ticket Hỗ Trợ]** ngay bên cạnh màn hình chat để đội ngũ tiếp nhận ngay nhé!"*.
 - **Xác thực trước khi tra đơn hàng**: `order_lookup` chỉ chạy được nếu agent nhận được token/user_id hợp lệ từ frontend gửi kèm — tránh lộ thông tin đơn hàng người khác.
 
 ### 2.3.1 Nguyên tắc định tuyến truy vấn (Query Routing) — Không phải mọi thứ đều cần Vector DB
