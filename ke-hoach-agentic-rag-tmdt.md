@@ -260,42 +260,37 @@ Dưới đây là danh sách đầy đủ các công cụ (Tools) được lập
     *   *Bảo mật tầng Ứng dụng (Fallback)*: Nếu `user_token` trống (khi lập trình viên test offline trong Jupyter Notebook), tự động fallback dùng `supabase_admin_client` nhưng vẫn kẹp lọc cứng `.eq("user_id", current_user_id)` bằng code Python.
     *   *Chốt chặn*: Nếu khách hàng chưa đăng nhập (`current_user_id` trống), tool từ chối xử lý ngay lập tức.
 
-##### 6. **`create_support_ticket(current_user_id, order_id, issue_description)`**
-*   **Mô tả**: Tạo ticket khiếu nại hoặc hỗ trợ chuyển tiếp cho nhân viên khi Agent bí câu trả lời hoặc khách hàng có nhu cầu gặp người thật.
-*   **Nguồn dữ liệu**: Ghi mới vào bảng `support_tickets` trong Supabase.
-*   **Lý do có tool**: Đảm bảo khách hàng luôn được hỗ trợ kịp thời bởi người thật khi gặp các vấn đề phức tạp (ví dụ: yêu cầu hoàn tiền, lỗi phần cứng).
-*   **Usecase thực tế**: Khách hàng bảo: *"Tôi muốn đổi trả máy lỗi, hãy kết nối tôi với nhân viên hỗ trợ"*.
-*   **Cơ chế bảo mật**: Yêu cầu `current_user_id` của tài khoản đăng nhập để đảm bảo ticket được gán đúng chủ sở hữu.
-
 ---
 
 #### C. Nhóm Công cụ dành cho Quản trị viên & Nhân viên (Bảo mật đặc quyền)
 
-##### 7. **`admin_financial_summary(admin_token, query_period)`**
+##### 6. **`admin_financial_summary(admin_token, query_period)`**
 *   **Mô tả**: Tổng hợp báo cáo doanh thu, sản phẩm bán chạy cho quản trị viên.
 *   **Nguồn dữ liệu**: Supabase Postgres (`orders` + `products`).
 *   **Lý do có tool**: Cung cấp công cụ phân tích dữ liệu nhanh cho nhà quản lý ngay trên khung chat Admin.
 *   **Usecase thực tế**: Admin hỏi: *"Doanh thu tuần này của shop được bao nhiêu?"*.
 *   **Cơ chế bảo mật**: Bắt buộc truyền `admin_token` hợp lệ (đã được phân quyền admin trong `auth.users`). Nếu không có token admin, tool từ chối thực thi để tránh rò rỉ thông tin tài chính qua tấn công prompt jailbreak của người dùng thường.
 
-##### 8. **`generate_product_description_draft(product_name, specs)`**
+##### 7. **`generate_product_description_draft(product_name, specs)`**
 *   **Mô tả**: Tự động soạn thảo bản nháp mô tả sản phẩm hấp dẫn dựa trên thông số kỹ thuật.
 *   **Nguồn dữ liệu**: LLM Generation.
 *   **Lý do có tool**: Tiết kiệm thời gian viết bài cho đội ngũ biên tập nội dung của shop.
 *   **Cơ chế hoạt động**: Agent sinh bài viết mô tả sản phẩm mẫu hiển thị lên màn hình Admin. Admin kiểm tra và bấm xác nhận phê duyệt thủ công trên giao diện Web để lưu bài viết vào database (Agent không được phép ghi đè trực tiếp DB sản phẩm).
 
-##### 9. **`staff_assist_tool(ticket_id)`**
+##### 8. **`staff_assist_tool(ticket_id)`**
 *   **Mô tả**: Trợ giúp nhân viên nội bộ xử lý khiếu nại (soạn nháp tin nhắn phản hồi, tra lịch sử mua hàng đối chứng).
 *   **Nguồn dữ liệu**: Supabase Postgres (`orders`, `support_tickets`, `policies`).
 *   **Lý do có tool**: Tối ưu hóa hiệu suất làm việc của nhân viên hỗ trợ khách hàng.
 *   **Usecase thực tế**: Nhân viên tra cứu nhanh xem khách hàng gửi ticket khiếu nại có đủ điều kiện đổi trả máy theo chính sách hay không.
 
-### 2.3 Kiến trúc Agent (đề xuất)
+### 2.3 Kiến trúc Agent & Chiến lược Guardrail (UI Navigation)
 
 - **Agent controller (bộ não)**: 1 LLM có function calling tốt, đóng vai router — nhận câu hỏi, quyết định gọi tool nào (có thể gọi nhiều tool liên tiếp), tổng hợp kết quả trả lời.
 - **Vòng lặp xử lý**: nhận câu hỏi → agent chọn tool → thực thi tool → agent xem kết quả → quyết định: đủ thông tin để trả lời hay cần gọi thêm tool khác → trả lời cuối/hoặc lặp lại.
-- **Guardrail chống bịa (quan trọng)**: sau khi `product_search_tool`/`policy_rag_tool` trả kết quả, agent phải tự đánh giá độ liên quan trước khi dùng để trả lời — nếu không tìm thấy tài liệu phù hợp, phải trả lời "mình chưa tìm thấy thông tin này, bạn có thể liên hệ nhân viên qua nút bên dưới" thay vì bịa ra thông tin (đây chính là ý tưởng Corrective RAG đã thảo luận trước đó — tự chấm điểm tài liệu tìm được rồi mới quyết định trả lời hay gọi lại/escalate).
-- **Xác thực trước khi tra đơn hàng**: `order_lookup_tool` chỉ chạy được nếu agent nhận được token/user_id hợp lệ từ frontend gửi kèm — tránh lộ thông tin đơn hàng người khác.
+- **Guardrail & Chuyển giao qua Nút UI (UI-Assisted Handover)**:
+  - *Không sinh Ticket rác tự động*: Thay vì để Agent tự động ghi ticket ngầm dưới DB, hệ thống áp dụng cơ chế chuyển giao thông minh qua giao diện Web UI.
+  - *Kịch bản kích hoạt*: Khi RAG không tìm thấy thông tin phù hợp, dữ liệu không ổn định, hoặc gặp các câu hỏi thuộc nhóm rủi ro/khiếu nại phức tạp (thương lượng giá, lỗi phần cứng, hoàn tiền), Agent sẽ kích hoạt Guardrail từ chối bịa đặt và lịch sự phản hồi: *"Vấn đề này cần sự hỗ trợ trực tiếp từ nhân viên CSKH, bạn vui lòng nhấn nút **[Tạo Ticket Hỗ Trợ]** ngay bên cạnh màn hình chat để đội ngũ tiếp nhận và xử lý ngay nhé!"*.
+- **Xác thực trước khi tra đơn hàng**: `order_lookup` chỉ chạy được nếu agent nhận được token/user_id hợp lệ từ frontend gửi kèm — tránh lộ thông tin đơn hàng người khác.
 
 ### 2.3.1 Nguyên tắc định tuyến truy vấn (Query Routing) — Không phải mọi thứ đều cần Vector DB
 
