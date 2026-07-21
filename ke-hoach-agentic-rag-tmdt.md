@@ -316,8 +316,8 @@ Hệ thống Agentic RAG được thiết kế theo mô hình đồ thị trạn
 ```
 
 - **Authentication Node**: Kiểm tra JWT Token trong Header. Nếu có token ➡️ Đánh dấu `is_authenticated = True`. Nếu không có ➡️ Vẫn cho phép truy vấn thông tin công khai.
-- **Intent Classification (Router Node)**: Phân loại ý định khách hàng thành 3 miền chuyên trách (`product`, `policy`, `orders`).
-- **Domain Sub-Graphs**: Mỗi nhánh gọi đúng bộ tool trong thư mục tương ứng (`src/d_tools/product`, `src/d_tools/policy`, `src/d_tools/orders`).
+- **Intent Classification (Router Node)**: Phân loại ý định khách hàng thành 3 miền chuyên trách (`product`, `policy`, `account`).
+- **Domain Sub-Graphs**: Mỗi nhánh gọi đúng bộ tool trong thư mục tương ứng (`src/d_tools/product`, `src/d_tools/policy`, `src/d_tools/account`).
 - **Guardrail & Chuyển giao qua Nút UI (UI-Assisted Handover)**: Khi RAG không tìm thấy thông tin phù hợp, dữ liệu không ổn định, hoặc gặp các câu hỏi rủi ro (thương lượng giá, lỗi phần cứng), Agent sẽ từ chối bịa đặt và lịch sự phản hồi: *"Vấn đề này cần sự hỗ trợ trực tiếp từ nhân viên CSKH, bạn vui lòng nhấn nút **[Tạo Ticket Hỗ Trợ]** ngay bên cạnh màn hình chat để đội ngũ tiếp nhận ngay nhé!"*.
 - **Xác thực trước khi tra đơn hàng**: `order_lookup` chỉ chạy được nếu agent nhận được token/user_id hợp lệ từ frontend gửi kèm — tránh lộ thông tin đơn hàng người khác.
 
