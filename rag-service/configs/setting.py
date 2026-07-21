@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     # 2. Supabase Connection
     SUPABASE_URL: str
     SUPABASE_SERVICE_ROLE_KEY: str
+    SUPABASE_ANON_KEY: str = ""  # Public key - dùng cho verify token (quyền hạn thấp)
+    SUPABASE_JWT_SECRET: str = ""  # Sử dụng để giải mã JWT Token của Supabase offline
 
     # 3. LLM API Keys
     GEMINI_API_KEY: str = ""

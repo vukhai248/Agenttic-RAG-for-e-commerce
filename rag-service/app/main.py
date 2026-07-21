@@ -4,7 +4,7 @@ from pathlib import Path
 # Thêm thư mục gốc của rag-service vào sys.path để tránh lỗi import module configs
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
@@ -29,7 +29,7 @@ app.add_middleware(
 class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
-    user_token: Optional[str] = None
+    # user_token đã được chuyển lên Header Authorization để tăng tính bảo mật
 
 class ChatResponse(BaseModel):
     reply: str
@@ -47,12 +47,30 @@ def health_check():
     }
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat_endpoint(request: ChatRequest):
+async def chat_endpoint(request: ChatRequest, authorization: Optional[str] = Header(None)):
     try:
+        from app.core.security import verify_supabase_jwt
+        
+        # Giải mã token lấy từ Header Authorization (Bearer token)
+        user_id = None
+        user_token = None
+        if authorization:
+            if authorization.startswith("Bearer "):
+                user_token = authorization[7:]
+            else:
+                user_token = authorization
+            
+            user_id = verify_supabase_jwt(user_token)
+            
         msg_lower = request.message.lower()
         
-        # MOCK phản hồi tạm thời để kiểm tra kết nối Next.js <-> FastAPI
-        reply = "Chào bạn! Đây là phản hồi từ FastAPI AI Backend thực tế. Hệ thống RAG và Agent đang được cấu trúc."
+        # MOCK phản hồi tạm thời có hiển thị thông tin xác thực để FE dễ debug
+        auth_status = f"Đã xác thực user_id: {user_id}" if user_id else "Chưa xác thực người dùng (Guest)"
+        reply = (
+            f"Chào bạn! Đây là phản hồi từ FastAPI AI Backend thực tế.\n"
+            f"Trạng thái Auth: {auth_status}\n"
+            f"Nội dung chat: '{request.message}'"
+        )
         tool_used = "mock_fastapi_tool"
         sources = ["fastapi_backend"]
         

@@ -2,41 +2,41 @@ import re
 from typing import List, Dict, Any
 
 class DataCleaner:
-    """Cleaner chịu trách nhiệm làm sạch và chuẩn hóa dữ liệu thô trước khi đưa vào embedding"""
+    """Cleaner responsible for cleaning and normalizing raw data before embedding"""
 
     @staticmethod
     def remove_html_tags(text: str) -> str:
-        """Loại bỏ các thẻ HTML có lẫn trong văn bản"""
+        """Remove HTML tags mixed in the text"""
         if not text:
             return ""
-        # Xóa các thẻ HTML
+        # Remove HTML tags
         clean_text = re.sub(r'<[^>]+>', ' ', text)
-        # Thay thế nhiều dấu cách liên tiếp bằng 1 dấu cách
+        # Replace multiple consecutive spaces with a single space
         clean_text = re.sub(r'\s+', ' ', clean_text)
         return clean_text.strip()
 
     def clean_product_data(self, products: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Làm sạch và chuẩn hóa danh sách sản phẩm"""
+        """Clean and normalize the product list"""
         cleaned_products = []
         print("[Cleaner] Bắt đầu làm sạch dữ liệu sản phẩm...")
         
         for prod in products:
             try:
-                # 1. Đảm bảo các trường cơ bản không bị None
+                # 1. Ensure basic fields are not None
                 name = prod.get("name", "").strip()
                 brand = prod.get("brand", "Unknown").strip()
                 category = prod.get("category", "accessory").strip()
                 description = prod.get("description", "")
                 
-                # 2. Làm sạch văn bản mô tả (mô tả sản phẩm rất dễ lẫn HTML khi cào từ CellphoneS)
+                # 2. Clean description text (product descriptions easily contain HTML when scraped)
                 clean_description = self.remove_html_tags(description)
                 
-                # 3. Chuẩn hóa giá và giảm giá
+                # 3. Normalize price and discount
                 price = float(prod.get("price", 0))
                 original_price = float(prod.get("original_price", 0))
                 discount = float(prod.get("discount", 0))
                 
-                # 4. Chuẩn hóa specs (JSONB)
+                # 4. Normalize specs (JSONB)
                 specs = prod.get("specs", {})
                 if not isinstance(specs, dict):
                     specs = {}
@@ -62,13 +62,13 @@ class DataCleaner:
         return cleaned_products
 
     def clean_policy_data(self, policies: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Làm sạch các tài liệu chính sách"""
+        """Clean policy documents"""
         cleaned_policies = []
         print("[Cleaner] Bắt đầu làm sạch dữ liệu chính sách...")
         
         for policy in policies:
             content = policy.get("content", "")
-            # Loại bỏ các khoảng trắng thừa, chuẩn hóa ký tự xuống dòng
+            # Remove redundant whitespaces, normalize newline characters
             clean_content = re.sub(r'\n{3,}', '\n\n', content)
             
             cleaned_policies.append({

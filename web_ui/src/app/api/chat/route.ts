@@ -28,11 +28,11 @@ export async function POST(request: Request) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(user_token ? { 'Authorization': `Bearer ${user_token}` } : {})
         },
         body: JSON.stringify({
           message,
           session_id,
-          user_token,
         }),
         // Đặt timeout ngắn để tránh treo request lâu khi backend chưa bật
         signal: AbortSignal.timeout(5000)

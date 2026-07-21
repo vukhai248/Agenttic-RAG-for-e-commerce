@@ -3,7 +3,12 @@ chunking:
   chunk_overlap: 200
 
 retrieval:
-  k: 5
+  product:
+    k_query: 15
+    k_rerank: 5
+  policy:
+    k_query: 5
+    k_rerank: 2
   graph_max_hops: 2 # number of traversal hops for graph retrieval
   rrf_k: 60 # smoothing constant for Reciprocal Rank Fusion
 
@@ -11,7 +16,7 @@ generation:
   temperature: 1.0
   max_tokens: 4096
   top_p: 1.0
-  reasoning_effort: HIGH # default/none for qwen 3.6 27b; low/medium/high for gpt oss 120b
+  reasoning_effort: medium # default/none for qwen 3.6 27b; low/medium/high for gpt oss 120b
   stream: True
   stop: 
 
@@ -51,6 +56,10 @@ llm:
 embedding:
   available:
     - "nvidia/llama-nemotron-embed-vl-1b-v2:free"  # Vision-Language, 2048 dims, đang dùng
-    - "text-embedding-3-small"                       # OpenAI, 1536 dims
-    - "intfloat/multilingual-e5-large"               # Offline local, 1024 dims
   active: "nvidia/llama-nemotron-embed-vl-1b-v2:free"  # Model đang dùng thực tế
+
+
+rerank:
+  available:
+    - "nvidia/llama-nemotron-rerank-vl-1b-v2:free"  
+  active: "nvidia/llama-nemotron-rerank-vl-1b-v2:free"  

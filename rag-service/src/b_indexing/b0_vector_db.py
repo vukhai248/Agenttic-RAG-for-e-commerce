@@ -45,3 +45,18 @@ class ChromaVectorDatabase:
         """Count documents in a collection."""
         collection = self.get_or_create_collection(collection_name)
         return collection.count()
+
+    def query(
+        self,
+        collection_name: str,
+        query_embeddings: List[List[float]],
+        n_results: int = 5,
+        where: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Query similar documents from a collection."""
+        collection = self.get_or_create_collection(collection_name)
+        return collection.query(
+            query_embeddings=query_embeddings,
+            n_results=n_results,
+            where=where
+        )

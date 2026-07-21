@@ -201,6 +201,31 @@ Ngoài `products`, cần thêm 5 bảng phục vụ RAG:
 | 6 | `escalate_tool` | Khi agent không xử lý được, gặp câu hỏi thuộc nhóm rủi ro tư vấn/tài chính (giá liên hệ, mặc cả, tư vấn chuyên sâu — xem mục 2.7), hoặc user muốn gặp người thật → tạo ticket gắn mức rủi ro, chuyển nhân viên | Postgres (`support_tickets`) |
 | 7 | `staff_assist_tool` | *(Dùng nội bộ, không public cho khách)* Đọc hóa đơn/đơn hàng liên quan ticket, tra lịch sử đơn hàng khách, đối chiếu chính sách hoàn tiền, soạn nháp phản hồi cho nhân viên duyệt trước khi gửi khách — xem chi tiết luồng ở mục 2.7 | Postgres (`orders`, `support_tickets`, `policy_chunks`) |
 
+### 2.2.1 Cập nhật bổ sung danh sách Tool (Triển khai thực tế & Mở rộng)
+
+Dưới đây là các công cụ (Tools) mới được thiết kế bổ sung hoặc điều chỉnh bảo mật so với kế hoạch ban đầu:
+
+#### 1. Tool khách hàng cá nhân (Có cơ chế bảo mật xác thực)
+*   **`order_lookup(order_id, current_user_id)`**:
+    *   *Mô tả*: Tra cứu trạng thái đơn hàng và lịch sử mua hàng cá nhân.
+    *   *Cơ chế bảo mật*: Yêu cầu tham số bắt buộc `current_user_id` (được backend tự động lấy từ phiên đăng nhập Supabase và tiêm vào tham số của Tool). Truy vấn SQL có ràng buộc `WHERE id = :order_id AND user_id = :current_user_id` để ngăn chặn rò rỉ dữ liệu chéo giữa các khách hàng.
+*   **`create_support_ticket(current_user_id, order_id, issue_description)`**:
+    *   *Mô tả*: Tạo ticket khiếu nại hoặc hỗ trợ chuyển tiếp cho nhân viên khi Agent bí câu trả lời hoặc khách hàng có nhu cầu gặp người thật.
+    *   *Cách thức*: Thực hiện SQL `INSERT` trực tiếp vào bảng `support_tickets` trong Supabase.
+
+#### 2. Tool kiểm tra tồn kho và vận chuyển (Real-time & Logistics)
+*   **`check_stock_and_delivery(product_id, destination_province)`**:
+    *   *Mô tả*: Truy vấn số lượng sản phẩm tồn kho thực tế theo thời gian thực (Real-time Stock) và tính toán thời gian giao hàng dự kiến.
+    *   *Lý do bổ sung*: Khắc phục nhược điểm thông tin tồn kho tĩnh trong ChromaDB. Tool sẽ gọi SQL trực tiếp vào bảng `products` của Supabase để kiểm tra cột `stock` thời gian thực, đồng thời tính toán số ngày giao hàng dựa trên vị trí của khách hàng.
+
+#### 3. Tool dành riêng cho Admin (Bảo mật cao, chạy độc lập)
+*   **`admin_financial_summary(admin_token, query_period)`**:
+    *   *Mô tả*: Tổng hợp báo cáo doanh thu, sản phẩm bán chạy cho quản trị viên.
+    *   *Lưu ý bảo mật*: Cần `admin_token` xác thực quyền quản trị tối cao để tránh các cuộc tấn công Jailbreak từ phía khách hàng.
+*   **`generate_product_description_draft(product_name, specs)`**:
+    *   *Mô tả*: Tự động soạn thảo bản nháp mô tả sản phẩm hấp dẫn dựa trên thông số kỹ thuật cho Admin.
+    *   *Quy trình vận hành*: Agent chỉ trả về bản nháp (Draft) trên màn hình Admin. Admin kiểm tra và bấm nút phê duyệt trên giao diện Web để ghi vào DB, đảm bảo Agent không có quyền cập nhật trực tiếp DB sản phẩm.
+
 ### 2.3 Kiến trúc Agent (đề xuất)
 
 - **Agent controller (bộ não)**: 1 LLM có function calling tốt, đóng vai router — nhận câu hỏi, quyết định gọi tool nào (có thể gọi nhiều tool liên tiếp), tổng hợp kết quả trả lời.
@@ -640,3 +665,53 @@ Các hạng mục dưới đây **không bắt buộc**, chỉ nên làm sau khi
 
 ### 5.3 Diffusion LLM cho bước viết câu trả lời cuối
 Xem chi tiết ở mục 3.5 — giữ nguyên vị trí ưu tiên thấp nhất trong toàn bộ kế hoạch.
+
+---
+
+## PHẦN BỔ SUNG: CẬP NHẬT THỰC TẾ TRIỂN KHAI (SO SÁNH THIẾT KẾ CŨ & TRIỂN KHAI MỚI)
+
+Dưới đây là bảng đối chiếu chi tiết giữa thiết kế dự kiến ban đầu trong kế hoạch và thực tế triển khai thực tế của dự án tính đến thời điểm hiện tại:
+
+### 1. Cơ sở dữ liệu Vector (Vector Store) & Data Flow
+*   **Thiết kế cũ (Kế hoạch)**: Dự kiến sử dụng `pgvector` trực tiếp trong cơ sở dữ liệu Supabase làm Vector Store chính để vừa `WHERE` giá vừa tìm kiếm vector cùng một lúc.
+*   **Triển khai mới (Thực tế)**: Sử dụng **ChromaDB cục bộ (Persistent Client)** làm Vector Store chính cho cả 2 collection `products_collection` và `policies_collection`. Việc này giúp quá trình demo cục bộ, benchmark và thay đổi cấu hình RAG (chunk_size, embedding model) trở nên cực kỳ linh hoạt và độc lập với Supabase Cloud.
+
+### 2. Kiến trúc phân lớp code (OOP & Functional Interface)
+*   **Thiết kế cũ (Kế hoạch)**: Chưa quy định chi tiết cách tổ chức các file Python trong `src/`.
+*   **Triển khai mới (Thực tế)**: Tách biệt hoàn toàn thành 2 tầng rõ rệt:
+    *   **Tầng Logic Nghiệp Vụ (OOP - `src/c_retrieval/`)**: Định nghĩa lớp cha `BaseRetriever` xử lý Embedding, Chroma query và Reranker. Các lớp con `ProductRetriever` và `PolicyRetriever` kế thừa trực tiếp để sử dụng lại code mà không cần duplicate.
+    *   **Tầng Giao Tiếp LLM (Functional - `src/d_tools/`)**: Chứa các file tool độc lập như `product_search.py`, `policy_search.py`, `product_compare.py`. Tầng này chỉ expose các hàm Python thuần (`def`) nhận tham số và định dạng string sạch sẽ cho LLM, đi kèm JSON Schema và được gom chung tại `__init__.py`.
+
+### 3. Xử lý khoảng giá và lọc cứng (Metadata Filtering)
+*   **Thiết kế cũ (Kế hoạch)**: Định tuyến SQL trực tiếp qua Supabase hoặc pgvector SQL query.
+*   **Triển khai mới (Thực tế)**: Tận dụng cơ chế **Metadata Filtering (`where` filter)** trực tiếp trong ChromaDB. Viết hàm dynamic build where clause trong `BaseRetriever` để lọc cứng `brand`, `min_price`, và `max_price` ngay khi query Vector DB, đảm bảo Reranker chỉ xếp hạng các sản phẩm nằm trong khoảng giá mong muốn.
+
+    *   Xây dựng cơ chế **Co giãn giới hạn động (Dynamic Limit Scaling)** trong `BaseRetriever`: Nếu người dùng yêu cầu số lượng kết quả (`limit`) lớn hơn giá trị `k_rerank` mặc định, hệ thống sẽ tự động nâng `k_rerank = limit` và nâng `k_query = limit * 3` để đảm bảo luôn cung cấp đủ số lượng ứng viên chất lượng cho Reranker.
+        *   *Usecase thực tế cần giải quyết*: Khách hàng yêu cầu *"Kể cho tôi 10 sản phẩm laptop HP dưới 20 triệu"*. Nếu cấu hình `k_rerank` mặc định trong hệ thống chỉ là 5, RAG thông thường sẽ chỉ trả về tối đa 5 sản phẩm (không đáp ứng đủ yêu cầu). Nhờ cơ chế Dynamic Scaling, hệ thống tự động nhận diện `limit = 10 > k_rerank (5)`, sau đó tự động co giãn nâng `k_rerank` lên 10 và `k_query` lên 30 ở tầng DB/Reranker, đảm bảo trả về đủ và đúng số lượng 10 sản phẩm tốt nhất cho người dùng.
+
+### 5. Tool so sánh nhiều sản phẩm chuyên biệt (`product_compare`)
+*   **Thiết kế cũ (Kế hoạch)**: Dự kiến để LLM tự quyết định gọi nhiều lượt query hoặc dùng SQL.
+*   **Triển khai mới (Thực tế)**: Viết tool `product_compare` chuyên biệt nhận danh sách tên máy `product_names`. Tool tự chạy vòng lặp Python cục bộ để tìm từng máy với `limit=1` (đáp ứng đúng ý tưởng `rerank = 1`), gom thông tin lại 1 lần duy nhất gửi cho LLM. Thiết kế này giúp tiết kiệm lượt gọi API của LLM, tăng tốc độ phản hồi và nâng cao độ chính xác khi so sánh.
+
+### 6. Nguyên tắc định hướng nhu cầu & Khóa hệ sinh thái (Agent Controller Level)
+*   **Thiết kế cũ (Kế hoạch)**: Đưa ra lựa chọn tích hợp Web Search thô để lấy thông tin bên ngoài.
+*   **Triển khai mới (Thực tế)**: Quyết định **Khóa hệ sinh thái dữ liệu**, không tích hợp Web Search ngoài để bảo vệ dữ liệu, tối ưu hóa tốc độ (giảm 2-4s latency gọi API ngoài) và ngăn chặn việc Agent tư vấn nhầm sang sản phẩm của các shop đối thủ.
+*   **Cơ chế Định hướng nhu cầu (Demand Redirection)**: Được lập trình trực tiếp bằng Prompt hệ thống ở tầng Agent Controller. Khi khách hàng hỏi về sản phẩm/thương hiệu không có trong kho:
+    1.  Agent nhận diện phân khúc/nhu cầu của sản phẩm đó (Ví dụ: Lenovo ThinkPad ➡️ nhu cầu làm việc văn phòng, độ bền cao).
+    2.  Agent tự động chuyển hướng gọi `product_search` để truy xuất các sản phẩm có tính chất tương đương trong kho (Ví dụ: Dell Latitude, HP ProBook).
+    3.  Agent trả lời khéo léo thông báo shop tạm hết hàng dòng đó và tư vấn khách chuyển hướng sang các sản phẩm thay thế tương đương đang sẵn có để chốt đơn.
+
+### 7. Danh sách các Usecase so sánh và tìm kiếm sản phẩm thực tế
+Để đảm bảo khả năng tư vấn thông minh cho cả đối tượng khách hàng rành công nghệ lẫn người dùng phổ thông (người lớn tuổi hỏi mơ hồ), hệ thống Agentic RAG đã thiết kế và xử lý các usecase thực tế sau:
+
+| # | Câu hỏi của Khách hàng | Loại câu hỏi | Cách Agent & Tool phối hợp xử lý |
+|---|---|---|---|
+| **1** | *"Tìm laptop chơi game mượt giá dưới 20 triệu"* | Tìm kiếm ngữ nghĩa + lọc cứng | LLM trích xuất `key_word` và `max_price`. Gọi `product_search`. ChromaDB thực hiện lọc cứng price trước, Reranker xếp hạng ngữ nghĩa sau. |
+| **2** | *"Kể cho tôi 10 sản phẩm laptop HP dưới 20 triệu"* | Yêu cầu số lượng lớn vượt config | Kích hoạt **Co giãn giới hạn động (Dynamic Limit Scaling)**. Hệ thống tự động nâng `k_rerank = 10` và `k_query = 30` ở tầng DB để không bị thiếu kết quả. |
+| **3** | *"So sánh giúp tôi Dell XPS 13 và MacBook Air M2"* | So sánh trực tiếp các sản phẩm cụ thể | LLM gọi duy nhất 1 tool `product_compare(product_names=['Dell XPS 13', 'MacBook Air M2'])`. Python chạy vòng lặp cục bộ lấy đúng 1 kết quả tốt nhất (`limit=1`) cho mỗi máy. |
+| **4** | *"So sánh điện thoại Samsung dòng A, dòng M và dòng S"* | So sánh dòng sản phẩm / phân khúc vĩ mô | LLM nhận diện đây là cẩm nang mua sắm. Gọi tool `policy_search` để lấy thông tin FAQ phân khúc của shop, hoặc gọi `product_search` lấy nhiều mẫu đại diện tự tổng hợp. |
+| **5** | *"So sánh Samsung A06 và các dòng Samsung khác"* | So sánh 1 máy cụ thể với dòng máy chung chung | LLM tìm specs của A06 trước (giá rẻ) ➡️ Tự động gọi tiếp `product_search` tìm các máy Samsung giá rẻ dưới 5 triệu để làm đối chứng so sánh cho hợp lý. |
+| **6** | *"So sánh Samsung S24 Plus với các dòng iPhone"* | So sánh 1 máy cụ thể với thương hiệu đối thủ | LLM lấy specs của S24 Plus (flagship) ➡️ Tự suy luận đối thủ xứng tầm của nó bên Apple (iPhone 15 Plus hoặc iPhone 15 Pro) ➡️ Gọi tiếp `product_search` tìm iPhone tương ứng để so sánh. |
+| **7** | *"So sánh Samsung S24, S25 Plus, iPhone 16 và các dòng Xiaomi của Tàu"* | Câu hỏi hỗn hợp phức tạp (cụ thể + mơ hồ) | LLM tách câu hỏi làm 2 phần: gọi `product_compare` cho 3 máy cụ thể, và gọi song song `product_search` tìm các dòng flagship Xiaomi tương đương ➡️ Gom thông tin so sánh. |
+| **8** | *"Shop mình có bán laptop Lenovo ThinkPad không?"* | Hỏi sản phẩm không có sẵn (Định hướng nhu cầu) | LLM nhận diện ThinkPad không nằm trong danh mục sản phẩm của shop ➡️ Không dùng Web Search ngoài ➡️ Tự gọi `product_search` tìm các dòng máy tương đương đang có sẵn (Dell Latitude, HP ProBook) để tư vấn định hướng khách hàng mua sản phẩm của shop. |
+

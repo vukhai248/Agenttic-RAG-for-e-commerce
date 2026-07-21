@@ -13,8 +13,24 @@ class AppConfig:
             self.chunk_overlap = data.get("chunk_overlap", 200)
 
     class Retrieval:
+        class Product:
+            def __init__(self, data):
+                self.k_query = data.get("k_query", 15)
+                self.k_rerank = data.get("k_rerank", 5)
+
+        class Policy:
+            def __init__(self, data):
+                self.k_query = data.get("k_query", 5)
+                self.k_rerank = data.get("k_rerank", 2)
+
         def __init__(self, data):
-            self.k = data.get("k", 5)
+            self.product = self.Product(data.get("product", {}))
+            self.policy = self.Policy(data.get("policy", {}))
+            
+            # Tương thích ngược: ưu tiên lấy từ root nếu file yaml cũ, nếu không lấy từ product
+            self.k_query = data.get("k_query", self.product.k_query)
+            self.k_rerank = data.get("k_rerank", self.product.k_rerank)
+            
             self.graph_max_hops = data.get("graph_max_hops", 2)
             self.rrf_k = data.get("rrf_k", 60)
 
