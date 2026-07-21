@@ -181,6 +181,32 @@ Ngoài `products`, cần thêm 5 bảng phục vụ RAG:
 | 7 | Popup chat widget (giao diện, chưa cần backend thật — có thể mock trả lời tạm) |
 | 8–9 | Đệm: sửa lỗi, deploy Vercel, viết thêm 2–3 trang chính sách (đổi trả, bảo hành, vận chuyển) làm nguồn dữ liệu cho RAG |
 
+### 1.5 Kiến trúc Bảo mật & Xác thực (Supabase Auth & Row-Level Security RLS)
+
+Để đảm bảo tính bảo mật và an toàn cho hệ thống thương mại điện tử, chúng tôi thiết lập kiến trúc xác thực không trạng thái (Stateless Authentication) dựa trên JWT Token của Supabase và Row-Level Security (RLS) của Postgres:
+
+#### A. Phân định vai trò các API Keys:
+*   **Supabase Anon Key (Publishable Key - Khóa ẩn danh công khai)**:
+    *   *Bản chất*: Giống như **"Chiếc chuông bấm ngoài cổng chính"** của rạp phim. Khóa này hoàn toàn công khai, an toàn khi nhúng vào mã nguồn Next.js ở Frontend.
+    *   *Nhiệm vụ*: Báo cho Supabase biết request này thuộc về hệ thống của shop để định tuyến đúng DB, đồng thời giúp Supabase áp dụng Rate Limiting chống spam DoS. Khi request dùng Anon Key, Supabase mặc định gán vai trò hạn chế là `anon` và bắt buộc đi qua bộ kiểm soát **RLS**. Muốn truy cập dữ liệu nhạy cảm, request bắt buộc phải đính kèm thêm **JWT Token (vé thông hành)** của người dùng.
+*   **Supabase Service Role Key (Secret Key - Khóa quản trị đặc quyền)**:
+    *   *Bản chất*: Giống như **"Thẻ vạn năng (Master Key)"** của Giám đốc rạp. Khóa này có quyền lực tối cao, bỏ qua (bypass) hoàn toàn tất cả các luật phân quyền RLS.
+    *   *Nhiệm vụ*: Chỉ được lưu trữ tuyệt mật ở Backend FastAPI (`.env`). Dùng cho các tác vụ hệ thống (như nạp dữ liệu thô bằng loader, đồng bộ dữ liệu định kỳ, hoặc tạo ticket hỗ trợ đặc quyền) nơi không đại diện cho phiên đăng nhập của một khách hàng cụ thể nào.
+
+#### B. Phân biệt Access Token (JWT) và Refresh Token trong phiên đăng nhập:
+*   **Access Token (JWT Token)**: Là vé thông hành có **thời hạn sử dụng ngắn (mặc định 1 tiếng)** trong Supabase để nâng cao tính bảo mật (nếu bị lộ cũng tự động vô hiệu hóa nhanh). Đây chính là mã `user_token` được gửi qua HTTP Header `Authorization: Bearer <token>` sang FastAPI để xác thực.
+*   **Refresh Token**: Là giấy chứng minh danh tính có **thời hạn sử dụng lâu (mặc định 7 ngày)**, được lưu ẩn an toàn trong Cookies trình duyệt.
+*   *Cơ chế tự động làm mới*: Trước khi Access Token hết hạn, Supabase Client SDK ở Frontend Next.js sẽ **tự động chạy ngầm** gửi Refresh Token lên Supabase đổi lấy Access Token mới tinh và cập nhật lại phiên làm việc. Quá trình diễn ra trong 0.1 giây hoàn toàn ngầm, giúp người dùng không bao giờ bị gián đoạn trải nghiệm chat.
+
+#### C. Quy trình xác thực và truy vấn dữ liệu cá nhân (Data Flow):
+1.  **Đăng nhập & Cấp vé**: Người dùng thực hiện đăng nhập thành công trên Frontend (Next.js) và được Supabase cấp cả **Access Token (JWT)** và **Refresh Token**.
+2.  **Gửi yêu cầu kèm vé**: Khi khách hàng chat, mã Access Token này được đính kèm vào Header `Authorization: Bearer <token>` để gửi sang Backend FastAPI.
+3.  **Xác thực kép**: Backend FastAPI gửi mã Access Token + `ANON_KEY` lên Supabase Auth API để xác nhận:
+    *   Xác định người dùng hợp lệ (tránh token giả mạo).
+    *   Xác định yêu cầu này đến từ hệ thống chính chủ của shop (qua `ANON_KEY`).
+    *   Khóa quyền của request trong phạm vi khách hàng (vai trò `authenticated`), tuyệt đối không được vượt sang quyền admin và bắt buộc tuân thủ RLS để không thể truy cập dữ liệu của người dùng khác.
+4.  **Truy xuất & So khớp**: Sau khi xác thực thành công, Supabase trả về `user_id` thật cho Backend. Backend tiến hành so khớp ID này và tiêm cứng vào các tham số của Tool để thực thi truy vấn dữ liệu cá nhân một cách an toàn.
+
 ---
 
 ## PHẦN 2: AGENTIC RAG (BẠN TỰ VIẾT — PHẦN TRỌNG TÂM)
@@ -189,42 +215,80 @@ Ngoài `products`, cần thêm 5 bảng phục vụ RAG:
 
 Đóng vai trợ lý mua sắm kiêm chăm sóc khách hàng, xử lý được các nhóm câu hỏi mà **RAG thường (1 lần retrieve rồi trả lời) không đủ**, vì cần dữ liệu động (đơn hàng), cần nhiều bước (so sánh), hoặc cần quyết định khi nào không đủ thông tin.
 
-### 2.2 Danh sách chức năng / Tool của Agent
+### 2.2 Danh sách các Công cụ (Tools) của AI Agent
 
-| # | Tool | Mô tả | Nguồn dữ liệu |
-|---|---|---|---|
-| 1 | `product_search_tool` | Tìm sản phẩm theo mô tả tự nhiên ("laptop mỏng nhẹ pin trâu"), kết hợp semantic search (vector) + filter cứng (giá, danh mục, thương hiệu) | Supabase Postgres — 1 câu SQL vừa `WHERE` (giá, danh mục) vừa `ORDER BY embedding <->` (pgvector, mục 1.3) |
-| 2 | `product_compare_tool` | Lấy thông số 2–3 sản phẩm được nêu tên, trình bày bảng so sánh, kèm nhận xét ("A pin tốt hơn nhưng B camera tốt hơn") | Postgres (`specs` jsonb) |
-| 3 | `order_lookup_tool` | Tra cứu trạng thái đơn hàng theo mã đơn hoặc theo tài khoản đang đăng nhập | Postgres (`orders`) — tra cứu chính xác, **không qua vector search** — cần xác thực user trước khi trả dữ liệu |
-| 4 | `policy_rag_tool` | Trả lời câu hỏi về chính sách đổi trả/bảo hành/vận chuyển, có trích dẫn điều khoản | Postgres (`policy_chunks`, pgvector) |
-| 5 | `recommendation_tool` | Gợi ý sản phẩm theo ngân sách + nhu cầu sử dụng (học tập/gaming/chụp ảnh...) | Postgres (`products` + `reviews`), kết hợp lọc cứng và vector cùng lúc |
-| 6 | `escalate_tool` | Khi agent không xử lý được, gặp câu hỏi thuộc nhóm rủi ro tư vấn/tài chính (giá liên hệ, mặc cả, tư vấn chuyên sâu — xem mục 2.7), hoặc user muốn gặp người thật → tạo ticket gắn mức rủi ro, chuyển nhân viên | Postgres (`support_tickets`) |
-| 7 | `staff_assist_tool` | *(Dùng nội bộ, không public cho khách)* Đọc hóa đơn/đơn hàng liên quan ticket, tra lịch sử đơn hàng khách, đối chiếu chính sách hoàn tiền, soạn nháp phản hồi cho nhân viên duyệt trước khi gửi khách — xem chi tiết luồng ở mục 2.7 | Postgres (`orders`, `support_tickets`, `policy_chunks`) |
+Dưới đây là danh sách đầy đủ các công cụ (Tools) được lập trình bằng Python, đóng vai trò là "tay chân" của AI Agent để truy xuất thông tin, so sánh và thực hiện các nghiệp vụ thương mại điện tử một cách an toàn:
 
-### 2.2.1 Cập nhật bổ sung danh sách Tool (Triển khai thực tế & Mở rộng)
+#### A. Nhóm Công cụ dành cho Khách hàng (Tìm kiếm & Tư vấn)
 
-Dưới đây là các công cụ (Tools) mới được thiết kế bổ sung hoặc điều chỉnh bảo mật so với kế hoạch ban đầu:
+##### 1. **`product_search(key_word, brand, min_price, max_price, limit)`**
+*   **Mô tả**: Tìm kiếm sản phẩm theo ngôn ngữ tự nhiên kết hợp lọc cứng.
+*   **Nguồn dữ liệu**: ChromaDB (`products_collection`) kết hợp Reranker và co giãn giới hạn động (Dynamic Limit Scaling).
+*   **Lý do có tool**: Giúp khách hàng tìm sản phẩm thông minh theo mô tả tự nhiên ("laptop mỏng nhẹ pin trâu") hoặc khoảng giá cụ thể, vượt trội hoàn toàn so với tìm kiếm từ khóa thông thường.
+*   **Usecase thực tế**: Khách hàng hỏi: *"Tìm cho tôi laptop HP mỏng nhẹ giá dưới 20 triệu"*.
 
-#### 1. Tool khách hàng cá nhân (Có cơ chế bảo mật xác thực)
-*   **`order_lookup(order_id, current_user_id)`**:
-    *   *Mô tả*: Tra cứu trạng thái đơn hàng và lịch sử mua hàng cá nhân.
-    *   *Cơ chế bảo mật*: Yêu cầu tham số bắt buộc `current_user_id` (được backend tự động lấy từ phiên đăng nhập Supabase và tiêm vào tham số của Tool). Truy vấn SQL có ràng buộc `WHERE id = :order_id AND user_id = :current_user_id` để ngăn chặn rò rỉ dữ liệu chéo giữa các khách hàng.
-*   **`create_support_ticket(current_user_id, order_id, issue_description)`**:
-    *   *Mô tả*: Tạo ticket khiếu nại hoặc hỗ trợ chuyển tiếp cho nhân viên khi Agent bí câu trả lời hoặc khách hàng có nhu cầu gặp người thật.
-    *   *Cách thức*: Thực hiện SQL `INSERT` trực tiếp vào bảng `support_tickets` trong Supabase.
+##### 2. **`product_compare(product_names)`**
+*   **Mô tả**: So sánh thông số kỹ thuật chi tiết của 2-3 sản phẩm được chỉ định.
+*   **Nguồn dữ liệu**: Supabase Postgres (`products` -> cột `specs` dạng JSONB).
+*   **Lý do có tool**: Gom thông tin so sánh nhanh chóng, trình bày bảng so sánh chi tiết và đưa ra nhận xét ưu nhược điểm (như CPU, RAM, Pin) để khách hàng dễ chọn lựa.
+*   **Usecase thực tế**: Khách hàng hỏi: *"So sánh Asus Zenbook 14 và MacBook Air M2 giúp tôi"*.
 
-#### 2. Tool kiểm tra tồn kho và vận chuyển (Real-time & Logistics)
-*   **`check_stock_and_delivery(product_id, destination_province)`**:
-    *   *Mô tả*: Truy vấn số lượng sản phẩm tồn kho thực tế theo thời gian thực (Real-time Stock) và tính toán thời gian giao hàng dự kiến.
-    *   *Lý do bổ sung*: Khắc phục nhược điểm thông tin tồn kho tĩnh trong ChromaDB. Tool sẽ gọi SQL trực tiếp vào bảng `products` của Supabase để kiểm tra cột `stock` thời gian thực, đồng thời tính toán số ngày giao hàng dựa trên vị trí của khách hàng.
+##### 3. **`policy_search(key_word, limit)`**
+*   **Mô tả**: Tìm kiếm thông tin về các chính sách bán hàng, đổi trả, bảo hành, vận chuyển của shop.
+*   **Nguồn dữ liệu**: ChromaDB (`policies_collection`).
+*   **Lý do có tool**: Tự động giải đáp các câu hỏi FAQ thường gặp của shop, giảm tải cho đội ngũ CSKH.
+*   **Usecase thực tế**: Khách hàng hỏi: *"Tôi được đổi trả sản phẩm trong vòng bao nhiêu ngày?"*.
 
-#### 3. Tool dành riêng cho Admin (Bảo mật cao, chạy độc lập)
-*   **`admin_financial_summary(admin_token, query_period)`**:
-    *   *Mô tả*: Tổng hợp báo cáo doanh thu, sản phẩm bán chạy cho quản trị viên.
-    *   *Lưu ý bảo mật*: Cần `admin_token` xác thực quyền quản trị tối cao để tránh các cuộc tấn công Jailbreak từ phía khách hàng.
-*   **`generate_product_description_draft(product_name, specs)`**:
-    *   *Mô tả*: Tự động soạn thảo bản nháp mô tả sản phẩm hấp dẫn dựa trên thông số kỹ thuật cho Admin.
-    *   *Quy trình vận hành*: Agent chỉ trả về bản nháp (Draft) trên màn hình Admin. Admin kiểm tra và bấm nút phê duyệt trên giao diện Web để ghi vào DB, đảm bảo Agent không có quyền cập nhật trực tiếp DB sản phẩm.
+##### 4. **`check_stock_and_delivery(product_id, destination_province)`**
+*   **Mô tả**: Kiểm tra số lượng sản phẩm tồn kho thực tế và tính toán thời gian giao hàng dự kiến.
+*   **Nguồn dữ liệu**: Supabase Postgres (`products` -> cột `stock` thời gian thực) + logic tính ngày vận chuyển.
+*   **Lý do có tool**: Thông tin tồn kho trong ChromaDB là tĩnh và có thể bị trễ. Cần tool này để kiểm tra số lượng tồn kho chính xác theo thời gian thực tại DB trước khi khách đặt mua.
+*   **Usecase thực tế**: Khách hàng hỏi: *"iPhone 16 Pro Max còn hàng không và giao về Hà Nội mất bao lâu?"*.
+
+---
+
+#### B. Nhóm Công cụ cá nhân (Yêu cầu xác thực & bảo mật)
+
+##### 5. **`order_lookup(current_user_id, user_token, order_id)`**
+*   **Mô tả**: Tra cứu trạng thái đơn hàng, lịch sử mua hàng cá nhân của tài khoản đang đăng nhập.
+*   **Nguồn dữ liệu**: Supabase Postgres (`orders`).
+*   **Lý do có tool**: Cung cấp trạng thái đơn hàng tự động mà vẫn đảm bảo tuyệt đối không rò rỉ dữ liệu cá nhân chéo giữa các tài khoản.
+*   **Usecase thực tế**: Khách hàng hỏi: *"Samsung S25 của tôi giao đến đâu rồi?"* (Agent sẽ tự động gọi tool không truyền `order_id` để lấy 5 đơn gần đây, đọc cột `items` và so khớp tên sản phẩm để trả lời thông minh).
+*   **Cơ chế xác thực & Bảo mật 2 lớp**:
+    *   *Xác thực*: Backend FastAPI bóc tách JWT Token từ Header `Authorization`, giải mã lấy `user_id` và tiêm cứng vào tham số `current_user_id` của Tool.
+    *   *Bảo mật tầng Database*: Nếu có `user_token`, khởi tạo client động (`get_user_supabase_client`) dùng Anon Key + Token của khách. Supabase tự động áp dụng luật RLS (`auth.uid() = user_id`) để lọc dữ liệu ở mức DB.
+    *   *Bảo mật tầng Ứng dụng (Fallback)*: Nếu `user_token` trống (khi lập trình viên test offline trong Jupyter Notebook), tự động fallback dùng `supabase_admin_client` nhưng vẫn kẹp lọc cứng `.eq("user_id", current_user_id)` bằng code Python.
+    *   *Chốt chặn*: Nếu khách hàng chưa đăng nhập (`current_user_id` trống), tool từ chối xử lý ngay lập tức.
+
+##### 6. **`create_support_ticket(current_user_id, order_id, issue_description)`**
+*   **Mô tả**: Tạo ticket khiếu nại hoặc hỗ trợ chuyển tiếp cho nhân viên khi Agent bí câu trả lời hoặc khách hàng có nhu cầu gặp người thật.
+*   **Nguồn dữ liệu**: Ghi mới vào bảng `support_tickets` trong Supabase.
+*   **Lý do có tool**: Đảm bảo khách hàng luôn được hỗ trợ kịp thời bởi người thật khi gặp các vấn đề phức tạp (ví dụ: yêu cầu hoàn tiền, lỗi phần cứng).
+*   **Usecase thực tế**: Khách hàng bảo: *"Tôi muốn đổi trả máy lỗi, hãy kết nối tôi với nhân viên hỗ trợ"*.
+*   **Cơ chế bảo mật**: Yêu cầu `current_user_id` của tài khoản đăng nhập để đảm bảo ticket được gán đúng chủ sở hữu.
+
+---
+
+#### C. Nhóm Công cụ dành cho Quản trị viên & Nhân viên (Bảo mật đặc quyền)
+
+##### 7. **`admin_financial_summary(admin_token, query_period)`**
+*   **Mô tả**: Tổng hợp báo cáo doanh thu, sản phẩm bán chạy cho quản trị viên.
+*   **Nguồn dữ liệu**: Supabase Postgres (`orders` + `products`).
+*   **Lý do có tool**: Cung cấp công cụ phân tích dữ liệu nhanh cho nhà quản lý ngay trên khung chat Admin.
+*   **Usecase thực tế**: Admin hỏi: *"Doanh thu tuần này của shop được bao nhiêu?"*.
+*   **Cơ chế bảo mật**: Bắt buộc truyền `admin_token` hợp lệ (đã được phân quyền admin trong `auth.users`). Nếu không có token admin, tool từ chối thực thi để tránh rò rỉ thông tin tài chính qua tấn công prompt jailbreak của người dùng thường.
+
+##### 8. **`generate_product_description_draft(product_name, specs)`**
+*   **Mô tả**: Tự động soạn thảo bản nháp mô tả sản phẩm hấp dẫn dựa trên thông số kỹ thuật.
+*   **Nguồn dữ liệu**: LLM Generation.
+*   **Lý do có tool**: Tiết kiệm thời gian viết bài cho đội ngũ biên tập nội dung của shop.
+*   **Cơ chế hoạt động**: Agent sinh bài viết mô tả sản phẩm mẫu hiển thị lên màn hình Admin. Admin kiểm tra và bấm xác nhận phê duyệt thủ công trên giao diện Web để lưu bài viết vào database (Agent không được phép ghi đè trực tiếp DB sản phẩm).
+
+##### 9. **`staff_assist_tool(ticket_id)`**
+*   **Mô tả**: Trợ giúp nhân viên nội bộ xử lý khiếu nại (soạn nháp tin nhắn phản hồi, tra lịch sử mua hàng đối chứng).
+*   **Nguồn dữ liệu**: Supabase Postgres (`orders`, `support_tickets`, `policies`).
+*   **Lý do có tool**: Tối ưu hóa hiệu suất làm việc của nhân viên hỗ trợ khách hàng.
+*   **Usecase thực tế**: Nhân viên tra cứu nhanh xem khách hàng gửi ticket khiếu nại có đủ điều kiện đổi trả máy theo chính sách hay không.
 
 ### 2.3 Kiến trúc Agent (đề xuất)
 
