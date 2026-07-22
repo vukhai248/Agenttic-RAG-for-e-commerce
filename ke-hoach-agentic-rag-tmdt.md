@@ -720,6 +720,24 @@ So sánh:
 
 > Lưu ý: đây là phần mở rộng, **không phải yêu cầu bắt buộc** — chỉ nên làm sau khi Agentic RAG core đã chạy ổn định và đúng deadline, tránh rủi ro tooling (DiffusionGemma còn khá mới, xem lại phần thảo luận trước để cân nhắc rủi ro hạ tầng).
 
+### 3.6 Khung Đo Đạc Benchmark & So Sánh Các Biến Thể Kiến Trúc (Architecture Benchmark Framework)
+
+Để tạo điểm sáng khoa học và minh chứng định lượng cho bài báo cáo đồ án, hệ thống thiết kế khung đo đạc so sánh giữa 3 biến thể kiến trúc:
+
+1. **Biến thể 1: Basic RAG (Baseline 1)**: Vector search thuần túy, không có Agent controller.
+2. **Biến thể 2: Single Controlled Agent Loop + Circuit Breaker + Self-RAG Evaluator (Baseline 2)**: 
+   * Đồ thị điều khiển vĩ mô ➡️ Nút chạy thẳng Tool Python ➡️ LLM Evaluator đánh giá ➡️ Nút Tổng hợp (Master Brain).
+   * Tích hợp 3 lớp Circuit Breaker (Max steps, Chặn gọi trùng lặp, Chặn 3 lỗi liên tiếp).
+3. **Biến thể 3: Multi-Agent Sub-Graphs (Kiến trúc Phân tầng)**: 
+   * Đồ thị rẽ nhánh sang các Sub-Agent chuyên trách từng miền (`product_agent`, `policy_agent`, `account_agent`).
+
+#### Bộ chỉ số đo đạc Benchmark (Benchmark Metrics):
+* **Tool-call Accuracy**: Tỷ lệ chọn đúng Tool + đúng định dạng tham số.
+* **Latency (p50 / p95)**: Tổng thời gian phản hồi câu hỏi (giây) và số lượng lượt gọi LLM trung bình/câu hỏi.
+* **Cost (Token Consumption)**: Tổng số token tiêu thụ (Input + Output Tokens) cho từng câu hỏi.
+* **Faithfulness & Answer Relevancy (Đo bằng RAGAS / LLM-as-a-Judge)**: Đánh giá xem câu trả lời có bám sát dữ liệu RAG và trả lời đúng trọng tâm không.
+* **Multi-Intent Handling**: Tỷ lệ xử lý thành công các câu hỏi phức hợp chứa 2-3 vế cùng lúc.
+
 ---
 
 ## PHẦN 4: TIMELINE TỔNG THỂ (mục tiêu: xong core trước 3 tuần, còn 1 tuần đệm)
