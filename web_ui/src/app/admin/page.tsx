@@ -119,7 +119,7 @@ export default function AdminPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isUsersLoading, setIsUsersLoading] = useState(false);
   const [isTicketsLoading, setIsTicketsLoading] = useState(false);
-  
+
   // Search & Filters
   const [prodSearch, setProdSearch] = useState('');
   const [prodFilterCategory, setProdFilterCategory] = useState('');
@@ -141,7 +141,7 @@ export default function AdminPage() {
     const offset = direction === 'prev' ? -1 : 1;
     setSelectedTimePoint(null);
     setSelectedSubChartMonth(null);
-    
+
     setChartAnchorDate(prev => {
       const newDate = new Date(prev.getTime());
       if (chartTab === 'today') {
@@ -301,7 +301,7 @@ export default function AdminPage() {
   // Auth State
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [authError, setAuthError] = useState<string>('');
-  
+
   const router = useRouter();
   const adminChatEndRef = useRef<HTMLDivElement>(null);
 
@@ -347,14 +347,14 @@ export default function AdminPage() {
   useEffect(() => {
     const checkAdminRoleAndLoadData = async () => {
       setIsLoading(true);
-      
+
       if (!isSupabaseConfigured) {
         setIsAdmin(true);
         setProducts(FALLBACK_PRODUCTS);
         setOrders(MOCK_ORDERS);
         setTickets(MOCK_TICKETS);
         setUsers([
-          { id: '1', email: 'vugiakhai2004@gmail.com', user_metadata: { full_name: 'Vũ Gia Khải', role: 'admin' }, created_at: '2026-07-04' },
+          { id: '1', email: 'admin.demo@example.com', user_metadata: { full_name: 'Quản Trị Viên', role: 'admin' }, created_at: '2026-07-04' },
           { id: '2', email: 'nhanvien.test@gmail.com', user_metadata: { full_name: 'Nguyễn Văn Staff', role: 'staff' }, created_at: '2026-07-01' },
           { id: '3', email: 'khachhang.test@gmail.com', user_metadata: { full_name: 'Trần Thị Customer' }, created_at: '2026-07-02' }
         ]);
@@ -372,9 +372,9 @@ export default function AdminPage() {
           return;
         }
 
-        // Quyền admin: role === 'admin' hoặc email chỉ định
+        // Quyền admin: role === 'admin' hoặc role === 'staff' (Phân quyền động không hardcode email)
         const userRole = user.user_metadata?.role;
-        const isUserAdmin = userRole === 'admin' || user.email === 'admin@gmail.com' || user.email === 'vugiakhai2004@gmail.com' || user.email?.toLowerCase().includes('admin');
+        const isUserAdmin = userRole === 'admin' || userRole === 'staff';
 
         if (!isUserAdmin) {
           setAuthError('Tài khoản của bạn không có đặc quyền Admin! Đang chuyển hướng...');
@@ -390,7 +390,7 @@ export default function AdminPage() {
           supabase.from('products').select('*').order('id', { ascending: false }).range(0, 999),
           supabase.from('products').select('*').order('id', { ascending: false }).range(1000, 1999)
         ]);
-        
+
         let prodData = null;
         let prodErr = batch1.error || batch2.error;
         if (!prodErr) {
@@ -409,7 +409,7 @@ export default function AdminPage() {
             if (p.image_url) images.push(p.image_url);
             else if (p.thumbnail) images.push(p.thumbnail);
             else images.push('https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=600');
-            
+
             const original_price = p.price || 0;
             const final_price = p.final_price || original_price;
             const discount = original_price > 0 && final_price < original_price
@@ -429,16 +429,41 @@ export default function AdminPage() {
           setProducts(FALLBACK_PRODUCTS);
         }
 
-        // Load Orders
-        const { data: orderData, error: orderErr } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
-        if (!orderErr && orderData) setOrders(orderData);
-        else setOrders(MOCK_ORDERS);
+        // Load Orders & Support Tickets qua Server API Route để lấy toàn bộ dữ liệu (không bị RLS client giới hạn)
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const token = session?.access_token;
 
-        // Load Support Tickets
-        const { data: ticketData, error: ticketErr } = await supabase.from('support_tickets').select('*').order('created_at', { ascending: false });
-        if (!ticketErr && ticketData) {
-          setTickets(ticketData);
-        } else {
+          if (token) {
+            const [ordersRes, ticketsRes] = await Promise.all([
+              fetch('/api/admin/orders', {
+                headers: { 'Authorization': `Bearer ${token}` }
+              }),
+              fetch('/api/admin/tickets', {
+                headers: { 'Authorization': `Bearer ${token}` }
+              })
+            ]);
+
+            if (ordersRes.ok) {
+              const ordJson = await ordersRes.json();
+              setOrders(ordJson.orders || []);
+            } else {
+              setOrders(MOCK_ORDERS);
+            }
+
+            if (ticketsRes.ok) {
+              const tickJson = await ticketsRes.json();
+              setTickets(tickJson.tickets || []);
+            } else {
+              setTickets(MOCK_TICKETS);
+            }
+          } else {
+            setOrders(MOCK_ORDERS);
+            setTickets(MOCK_TICKETS);
+          }
+        } catch (dataErr) {
+          console.error('Lỗi khi fetch orders/tickets qua API:', dataErr);
+          setOrders(MOCK_ORDERS);
           setTickets(MOCK_TICKETS);
         }
 
@@ -462,7 +487,7 @@ export default function AdminPage() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-      
+
       if (!token) throw new Error('Không tìm thấy token phiên đăng nhập');
 
       const response = await fetch('/api/admin/users', {
@@ -540,7 +565,7 @@ export default function AdminPage() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Cập nhật vai trò thất bại');
-      
+
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, user_metadata: { ...u.user_metadata, role: newRole } } : u));
       if (selectedUserDetail && selectedUserDetail.id === userId) {
         setSelectedUserDetail((prev: any) => ({ ...prev, user_metadata: { ...prev.user_metadata, role: newRole } }));
@@ -554,7 +579,7 @@ export default function AdminPage() {
     }
   };
 
-  // Cập nhật trạng thái đơn hàng
+  // Cập nhật trạng thái đơn hàng qua Server API
   const handleUpdateOrderStatus = async (orderId: string, newStatus: string) => {
     setUpdatingOrderStatus(true);
     try {
@@ -564,12 +589,21 @@ export default function AdminPage() {
         return;
       }
 
-      const { error } = await supabase
-        .from('orders')
-        .update({ status: newStatus })
-        .eq('id', orderId);
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error('Không tìm thấy phiên đăng nhập');
 
-      if (error) throw error;
+      const response = await fetch('/api/admin/orders', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ orderId, status: newStatus })
+      });
+
+      const resJson = await response.json();
+      if (!response.ok) throw new Error(resJson.error || 'Lỗi cập nhật đơn hàng');
 
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
       if (selectedOrder) setSelectedOrder((prev: any) => ({ ...prev, status: newStatus }));
@@ -582,7 +616,7 @@ export default function AdminPage() {
     }
   };
 
-  // Cập nhật trạng thái Ticket
+  // Cập nhật trạng thái Ticket qua Server API
   const handleUpdateTicket = async (ticketId: string, newStatus: 'open' | 'in_progress' | 'resolved') => {
     setUpdatingTicket(true);
     try {
@@ -595,12 +629,21 @@ export default function AdminPage() {
         return;
       }
 
-      const { error } = await supabase
-        .from('support_tickets')
-        .update(payload)
-        .eq('id', ticketId);
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error('Không tìm thấy phiên đăng nhập');
 
-      if (error) throw error;
+      const response = await fetch('/api/admin/tickets', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ ticketId, ...payload })
+      });
+
+      const resJson = await response.json();
+      if (!response.ok) throw new Error(resJson.error || 'Lỗi cập nhật trạng thái ticket');
 
       setTickets(prev => prev.map(t => t.id === ticketId ? { ...t, ...payload } : t));
       setSelectedTicket((prev: any) => ({ ...prev, ...payload }));
@@ -613,7 +656,7 @@ export default function AdminPage() {
     }
   };
 
-  // Nhân viên gửi tin nhắn trả lời trong Ticket chat (Ghi đè cột note dạng JSON)
+  // Nhân viên gửi tin nhắn trả lời trong Ticket chat (Ghi đè cột note dạng JSON) qua Server API
   const handleSendTicketReply = async (e: React.FormEvent) => {
     e.preventDefault();
     if ((!ticketReplyNote.trim() && !pendingImage) || !selectedTicket || updatingTicket) return;
@@ -658,12 +701,21 @@ export default function AdminPage() {
         return;
       }
 
-      const { error } = await supabase
-        .from('support_tickets')
-        .update(payload)
-        .eq('id', selectedTicket.id);
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error('Không tìm thấy phiên đăng nhập');
 
-      if (error) throw error;
+      const response = await fetch('/api/admin/tickets', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ ticketId: selectedTicket.id, ...payload })
+      });
+
+      const resJson = await response.json();
+      if (!response.ok) throw new Error(resJson.error || 'Lỗi gửi phản hồi ticket');
 
       const updatedTicket = { ...selectedTicket, ...payload };
       setTickets(prev => prev.map(t => t.id === selectedTicket.id ? updatedTicket : t));
@@ -707,7 +759,7 @@ export default function AdminPage() {
       const colorTag = tags.find(t => t.type === 'color');
       const ramRomTag = tags.find(t => t.type === 'ram_rom');
       const condTag = tags.find(t => t.type === 'condition');
-      
+
       // Tạo label
       const colorVal = colorTag ? colorTag.value : '';
       const ramRomVal = ramRomTag ? ramRomTag.value : '';
@@ -718,7 +770,7 @@ export default function AdminPage() {
       if (ramRomVal) labelParts.push(ramRomVal);
       if (condVal) labelParts.push(condVal);
       label = labelParts.length > 0 ? labelParts.join(' - ') : formProduct.name;
-      
+
       // Trích xuất RAM và ROM
       let ram = '';
       let storage = '';
@@ -742,7 +794,7 @@ export default function AdminPage() {
 
     if (variantsList.length > 0) {
       specsObject.variants = variantsList;
-      
+
       // Tự động gom nhóm màu sắc từ các variant gán để điền color_options và color_images tương thích ngược
       const uniqueColors: { name: string; image: string }[] = [];
       variantsList.forEach(v => {
@@ -750,7 +802,7 @@ export default function AdminPage() {
           uniqueColors.push({ name: v.color, image: v.image || formProduct.images?.[0] || '' });
         }
       });
-      
+
       if (uniqueColors.length > 0) {
         specsObject.color_options = uniqueColors.map(c => c.name);
         specsObject.color_images = uniqueColors.map(c => c.image);
@@ -790,7 +842,7 @@ export default function AdminPage() {
           const { error } = await supabase.from('products').update(payload).eq('id', editingProduct.id);
           if (error) throw error;
         }
-        
+
         const updatedProduct = {
           ...payload,
           id: editingProduct.id,
@@ -812,7 +864,7 @@ export default function AdminPage() {
           const { error } = await supabase.from('products').insert({ ...payload, id: newId });
           if (error) throw error;
         }
-        
+
         const newProduct = {
           ...payload,
           id: newId,
@@ -884,7 +936,7 @@ export default function AdminPage() {
     setColorRows([]);
     setRamRoms([]);
     setNewRamRom('');
-    
+
     // Tự động tạo kho thẻ chính sách mặc định ban đầu
     const initialTags: VariantTag[] = [];
     ensureDefaultPolicyTags(initialTags);
@@ -1039,7 +1091,7 @@ export default function AdminPage() {
     setNewPolicyVal('');
 
     // Parse specs object sang key-value (lọc bỏ các key nội bộ và tag nội bộ)
-    const INTERNAL_KEYS = new Set(['original_link','ratings_count','color_options','color_images','variants','ram','storage','available_tags','availableTags','policy_tags','policyTags']);
+    const INTERNAL_KEYS = new Set(['original_link', 'ratings_count', 'color_options', 'color_images', 'variants', 'ram', 'storage', 'available_tags', 'availableTags', 'policy_tags', 'policyTags']);
     const rows: SpecRow[] = Object.entries(p.specs || {})
       .filter(([key]) => !INTERNAL_KEYS.has(key))
       .map(([key, value]) => ({ key, value: String(value) }));
@@ -1134,12 +1186,12 @@ export default function AdminPage() {
   const calculateStats = () => {
     const successfulOrders = orders.filter(o => o.status !== 'cancelled' && o.status !== 'pending');
     const cancelledOrders = orders.filter(o => o.status === 'cancelled');
-    
+
     const totalRevenue = successfulOrders.reduce((acc, cur) => acc + Number(cur.total), 0);
     const lostRevenue = cancelledOrders.reduce((acc, cur) => acc + Number(cur.total), 0);
     const aov = successfulOrders.length > 0 ? Math.round(totalRevenue / successfulOrders.length) : 0;
     const cancelledRate = orders.length > 0 ? Math.round((cancelledOrders.length / orders.length) * 100) : 0;
-    
+
     const seenLowStock = new Set();
     const lowStockProducts = products.filter(p => {
       if (p.stock === null || p.stock === undefined || p.stock > 5) return false;
@@ -1178,14 +1230,14 @@ export default function AdminPage() {
     const dailyData: Record<string, number> = {};
     const last7Days: { label: string; key: string }[] = [];
     const dayNames = ['Chủ Nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
-    
+
     for (let i = 6; i >= 0; i--) {
       const d = new Date(chartAnchorDate.getTime());
       d.setDate(chartAnchorDate.getDate() - i);
       const dayName = dayNames[d.getDay()];
       const dayVal = String(d.getDate()).padStart(2, '0');
       const monthVal = String(d.getMonth() + 1).padStart(2, '0');
-      
+
       const label = `${dayName} (${dayVal}/${monthVal})`;
       const key = `${d.getFullYear()}-${monthVal}-${dayVal}`;
       last7Days.push({ label, key });
@@ -1238,7 +1290,7 @@ export default function AdminPage() {
       const month = parseInt(mStr);
       const year = parseInt(yStr);
       const daysInMonth = new Date(year, month, 0).getDate(); // Lấy số ngày của tháng đó
-      
+
       const dailySubData: Record<string, { label: string; revenue: number; qty: number; cancelled: number }> = {};
       for (let d = 1; d <= daysInMonth; d++) {
         const dStr = String(d).padStart(2, '0');
@@ -1376,9 +1428,9 @@ export default function AdminPage() {
 
     filteredOrdersForCategory.forEach(o => {
       o.items?.forEach((item: any) => {
-        const matchedProduct = products.find(p => 
-          p.id === item.id || 
-          p.id === item.product_id || 
+        const matchedProduct = products.find(p =>
+          p.id === item.id ||
+          p.id === item.product_id ||
           item.name === p.name ||
           item.name.startsWith(p.name) ||
           item.name.includes(p.name)
@@ -1479,8 +1531,8 @@ export default function AdminPage() {
         const brandClean = removeVietnameseTones(p.brand || '');
         const descClean = removeVietnameseTones(p.description || '');
         const productWords = `${nameClean} ${brandClean} ${descClean}`.split(/[\s\-\/\,\.\(\)]+/).filter(Boolean);
-        
-        matchesSearch = queryWords.every(qw => 
+
+        matchesSearch = queryWords.every(qw =>
           productWords.some(pw => pw.startsWith(qw))
         );
       }
@@ -1528,63 +1580,58 @@ export default function AdminPage() {
 
   return (
     <div className="flex flex-1 min-h-[calc(100vh-140px)] bg-background text-foreground transition-colors duration-200">
-      
+
       {/* 1. SIDEBAR ĐIỀU HƯỚNG */}
       <aside className="w-64 border-r border-border bg-card/35 hidden md:flex flex-col p-6 space-y-6 flex-shrink-0">
         <div className="flex items-center gap-2.5 px-2 pb-4 border-b border-border">
           <LayoutDashboard className="w-5 h-5 text-primary" />
           <span className="font-extrabold text-base tracking-wide uppercase text-foreground">Admin Panel</span>
         </div>
-        
+
         <nav className="flex-1 space-y-1.5 text-sm">
           <button
             onClick={() => setPanel('dashboard')}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all font-medium cursor-pointer ${
-              panel === 'dashboard' ? 'bg-primary text-primary-foreground font-bold shadow-md shadow-primary/15' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all font-medium cursor-pointer ${panel === 'dashboard' ? 'bg-primary text-primary-foreground font-bold shadow-md shadow-primary/15' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              }`}
           >
             <Activity className="w-4 h-4" />
             <span>Dashboard</span>
           </button>
-          
+
           <button
             onClick={() => setPanel('products')}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all font-medium cursor-pointer ${
-              panel === 'products' ? 'bg-primary text-primary-foreground font-bold shadow-md shadow-primary/15' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all font-medium cursor-pointer ${panel === 'products' ? 'bg-primary text-primary-foreground font-bold shadow-md shadow-primary/15' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              }`}
           >
             <Package className="w-4 h-4" />
             <span>Sản phẩm ({products.length})</span>
           </button>
-          
+
           <button
             onClick={() => setPanel('orders')}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all font-medium cursor-pointer ${
-              panel === 'orders' ? 'bg-primary text-primary-foreground font-bold shadow-md shadow-primary/15' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all font-medium cursor-pointer ${panel === 'orders' ? 'bg-primary text-primary-foreground font-bold shadow-md shadow-primary/15' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              }`}
           >
             <ShoppingBag className="w-4 h-4" />
             <span>Đơn hàng ({orders.length})</span>
           </button>
-          
+
           <button
             onClick={() => setPanel('users')}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all font-medium cursor-pointer ${
-              panel === 'users' ? 'bg-primary text-primary-foreground font-bold shadow-md shadow-primary/15' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all font-medium cursor-pointer ${panel === 'users' ? 'bg-primary text-primary-foreground font-bold shadow-md shadow-primary/15' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              }`}
           >
             <Users className="w-4 h-4" />
             <span>Nhân viên & Khách</span>
           </button>
-          
+
           <button
             onClick={() => setPanel('tickets')}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all font-medium cursor-pointer ${
-              panel === 'tickets' ? 'bg-primary text-primary-foreground font-bold shadow-md shadow-primary/15' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all font-medium cursor-pointer ${panel === 'tickets' ? 'bg-primary text-primary-foreground font-bold shadow-md shadow-primary/15' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              }`}
           >
             <LifeBuoy className="w-4 h-4" />
-            <span>Hỗ trợ khách hàng ({tickets.filter(t=>t.status!=='resolved').length})</span>
+            <span>Hỗ trợ khách hàng ({tickets.filter(t => t.status !== 'resolved').length})</span>
           </button>
         </nav>
 
@@ -1597,7 +1644,7 @@ export default function AdminPage() {
 
       {/* 2. NỘI DUNG CHÍNH (MAIN CONTENT) */}
       <main className="flex-1 p-6 md:p-8 space-y-6 overflow-hidden">
-        
+
         {/* Mobile Navigation bar */}
         <div className="md:hidden flex gap-2 overflow-x-auto pb-3 border-b border-border no-scrollbar text-xs">
           <button onClick={() => setPanel('dashboard')} className={`px-3.5 py-2 rounded-xl whitespace-nowrap ${panel === 'dashboard' ? 'bg-primary text-primary-foreground font-bold' : 'bg-card border border-border text-muted-foreground'}`}>Dashboard</button>
@@ -1693,18 +1740,18 @@ export default function AdminPage() {
 
             {/* Thống kê chi tiết & Biểu đồ phân tích */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              
+
               {/* Cột trái: Biểu đồ doanh thu tuần/tháng */}
               <div className="lg:col-span-2 rounded-2xl border border-border bg-card/40 p-5 space-y-4 shadow-sm">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-border/60 pb-3">
                   <div className="space-y-1">
                     <h3 className="text-sm font-bold text-foreground">
-                      {selectedSubChartMonth 
-                        ? `Chi tiết doanh thu tháng ${selectedSubChartMonth}` 
+                      {selectedSubChartMonth
+                        ? `Chi tiết doanh thu tháng ${selectedSubChartMonth}`
                         : 'Phân tích doanh thu'
                       }
                     </h3>
-                    
+
                     {/* Hàng điều phối thời gian với nút < và > */}
                     {!selectedSubChartMonth && (
                       <div className="flex items-center gap-2">
@@ -1715,7 +1762,7 @@ export default function AdminPage() {
                         >
                           <ChevronLeft className="w-3 h-3" />
                         </button>
-                        
+
                         <span className="text-[10px] font-black text-foreground select-none">
                           {(() => {
                             if (chartTab === 'today') {
@@ -1742,7 +1789,7 @@ export default function AdminPage() {
                       </div>
                     )}
                   </div>
-                  
+
                   {selectedSubChartMonth ? (
                     <button
                       onClick={() => {
@@ -1757,32 +1804,29 @@ export default function AdminPage() {
                     <div className="flex rounded-lg border border-border bg-background p-0.5 text-xs">
                       <button
                         onClick={() => handleChartTabChange('today')}
-                        className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
-                          chartTab === 'today' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                        }`}
+                        className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${chartTab === 'today' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                          }`}
                       >
                         1 ngày (Hôm nay)
                       </button>
                       <button
                         onClick={() => handleChartTabChange('week')}
-                        className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
-                          chartTab === 'week' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                        }`}
+                        className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${chartTab === 'week' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                          }`}
                       >
                         7 ngày trước
                       </button>
                       <button
                         onClick={() => handleChartTabChange('month')}
-                        className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
-                          chartTab === 'month' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                        }`}
+                        className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${chartTab === 'month' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                          }`}
                       >
                         1 năm trước (12 tháng)
                       </button>
                     </div>
                   )}
                 </div>
-                
+
                 {/* Vẽ Biểu đồ Đường SVG chuyên nghiệp với lưới phân tích (Grid Lines) */}
                 {(() => {
                   if (selectedSubChartMonth) {
@@ -1791,46 +1835,46 @@ export default function AdminPage() {
                     const maxQty = Math.max(...activeData.map((d: any) => d.qty), 1);
                     const maxCancelled = Math.max(...activeData.map((d: any) => d.cancelled), 1);
                     const maxRightAxis = Math.max(maxQty, maxCancelled, 5); // Trục Y phụ bên phải
-                    
+
                     const svgWidth = 600;
                     const svgHeight = 220;
                     const paddingLeft = 70;
                     const paddingRight = 45;
                     const paddingTop = 25;
                     const paddingBottom = 30;
-                    
+
                     const chartWidth = svgWidth - paddingLeft - paddingRight;
                     const chartHeight = svgHeight - paddingTop - paddingBottom;
-                    
+
                     // Điểm tọa độ Doanh thu
                     const pointsRevenue = activeData.map((item: any, idx: number) => {
                       const x = paddingLeft + (idx * (chartWidth / (activeData.length - 1)));
                       const y = svgHeight - paddingBottom - (item.revenue / maxRevenue) * chartHeight;
                       return { x, y, label: item.label, value: item.revenue, qty: item.qty, cancelled: item.cancelled };
                     });
-                    
+
                     // Điểm tọa độ Số lượng bán được (qty)
                     const pointsQty = activeData.map((item: any, idx: number) => {
                       const x = paddingLeft + (idx * (chartWidth / (activeData.length - 1)));
                       const y = svgHeight - paddingBottom - (item.qty / maxRightAxis) * chartHeight;
                       return { x, y };
                     });
-                    
+
                     // Điểm tọa độ Đơn bị hủy (cancelled)
                     const pointsCancelled = activeData.map((item: any, idx: number) => {
                       const x = paddingLeft + (idx * (chartWidth / (activeData.length - 1)));
                       const y = svgHeight - paddingBottom - (item.cancelled / maxRightAxis) * chartHeight;
                       return { x, y };
                     });
-                    
+
                     const lineRevenuePath = pointsRevenue.reduce((acc: string, p: any, idx: number) => {
                       return idx === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`;
                     }, '');
-                    
-                    const areaRevenuePath = pointsRevenue.length > 0 
+
+                    const areaRevenuePath = pointsRevenue.length > 0
                       ? `${lineRevenuePath} L ${pointsRevenue[pointsRevenue.length - 1].x} ${svgHeight - paddingBottom} L ${pointsRevenue[0].x} ${svgHeight - paddingBottom} Z`
                       : '';
-                      
+
                     const lineQtyPath = pointsQty.reduce((acc: string, p: any, idx: number) => {
                       return idx === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`;
                     }, '');
@@ -1840,7 +1884,7 @@ export default function AdminPage() {
                     }, '');
 
                     const gridTicks = [0, 0.25, 0.5, 0.75, 1];
-                    
+
                     return (
                       <div className="relative w-full overflow-hidden bg-background/25 rounded-2xl p-2 space-y-2">
                         {/* Legend chú thích màu sắc ở góc */}
@@ -1866,7 +1910,7 @@ export default function AdminPage() {
                               <stop offset="100%" stopColor="var(--primary)" stopOpacity="0.0" />
                             </linearGradient>
                           </defs>
-                          
+
                           {/* Lưới ngang & Nhãn trục Y */}
                           {gridTicks.map((tick: number, i: number) => {
                             const y = svgHeight - paddingBottom - tick * chartHeight;
@@ -1874,30 +1918,30 @@ export default function AdminPage() {
                             const rightVal = Math.round(tick * maxRightAxis);
                             return (
                               <g key={i} className="opacity-40">
-                                <line 
-                                  x1={paddingLeft} 
-                                  y1={y} 
-                                  x2={svgWidth - paddingRight} 
-                                  y2={y} 
-                                  stroke="currentColor" 
-                                  strokeWidth="1" 
-                                  strokeDasharray="3 3" 
+                                <line
+                                  x1={paddingLeft}
+                                  y1={y}
+                                  x2={svgWidth - paddingRight}
+                                  y2={y}
+                                  stroke="currentColor"
+                                  strokeWidth="1"
+                                  strokeDasharray="3 3"
                                   className="text-border/80"
                                 />
                                 {/* Trục Y trái: Doanh thu */}
-                                <text 
-                                  x={paddingLeft - 10} 
-                                  y={y + 3.5} 
-                                  textAnchor="end" 
+                                <text
+                                  x={paddingLeft - 10}
+                                  y={y + 3.5}
+                                  textAnchor="end"
                                   className="fill-muted-foreground text-[8px] font-bold"
                                 >
                                   {tick === 0 ? '0' : formatPrice(leftVal)}
                                 </text>
                                 {/* Trục Y phải: Số lượng */}
-                                <text 
-                                  x={svgWidth - paddingRight + 10} 
-                                  y={y + 3.5} 
-                                  textAnchor="start" 
+                                <text
+                                  x={svgWidth - paddingRight + 10}
+                                  y={y + 3.5}
+                                  textAnchor="start"
                                   className="fill-muted-foreground text-[8px] font-bold"
                                 >
                                   {rightVal}
@@ -1905,19 +1949,19 @@ export default function AdminPage() {
                               </g>
                             );
                           })}
-                          
+
                           {/* Đổ vùng màu gradient doanh thu */}
                           {areaRevenuePath && (
                             <path d={areaRevenuePath} fill="url(#subChartAreaGrad)" />
                           )}
-                          
+
                           {/* Đường Line Doanh thu */}
                           {lineRevenuePath && (
-                            <path 
-                              d={lineRevenuePath} 
-                              fill="none" 
-                              stroke="var(--primary)" 
-                              strokeWidth="2.5" 
+                            <path
+                              d={lineRevenuePath}
+                              fill="none"
+                              stroke="var(--primary)"
+                              strokeWidth="2.5"
                               strokeLinecap="round"
                               strokeLinejoin="round"
                             />
@@ -1925,11 +1969,11 @@ export default function AdminPage() {
 
                           {/* Đường Line Số lượng đã bán */}
                           {lineQtyPath && (
-                            <path 
-                              d={lineQtyPath} 
-                              fill="none" 
-                              stroke="#f59e0b" 
-                              strokeWidth="1.5" 
+                            <path
+                              d={lineQtyPath}
+                              fill="none"
+                              stroke="#f59e0b"
+                              strokeWidth="1.5"
                               strokeDasharray="4 2"
                               strokeLinecap="round"
                               strokeLinejoin="round"
@@ -1938,107 +1982,105 @@ export default function AdminPage() {
 
                           {/* Đường Line Đơn bị hủy */}
                           {lineCancelledPath && (
-                            <path 
-                              d={lineCancelledPath} 
-                              fill="none" 
-                              stroke="#f53f3f" 
-                              strokeWidth="1.5" 
+                            <path
+                              d={lineCancelledPath}
+                              fill="none"
+                              stroke="#f53f3f"
+                              strokeWidth="1.5"
                               strokeLinecap="round"
                               strokeLinejoin="round"
                             />
                           )}
-                          
+
                           {/* Điểm tương tác của từng ngày */}
                           {pointsRevenue.map((p: any, idx: number) => {
                             const isTodayFiltered = selectedTimePoint === p.label;
                             const showLabel = idx === 0 || idx === 4 || idx === 9 || idx === 14 || idx === 19 || idx === 24 || idx === activeData.length - 1;
-                            
+
                             return (
                               <g key={idx} className="group/subpoint">
                                 {showLabel && (
-                                  <text 
-                                    x={p.x} 
-                                    y={svgHeight - 6} 
-                                    textAnchor="middle" 
+                                  <text
+                                    x={p.x}
+                                    y={svgHeight - 6}
+                                    textAnchor="middle"
                                     onClick={() => setSelectedTimePoint(selectedTimePoint === p.label ? null : p.label)}
-                                    className={`cursor-pointer text-[8px] font-extrabold transition-all duration-150 ${
-                                      isTodayFiltered 
-                                        ? 'fill-primary font-black scale-110' 
+                                    className={`cursor-pointer text-[8px] font-extrabold transition-all duration-150 ${isTodayFiltered
+                                        ? 'fill-primary font-black scale-110'
                                         : 'fill-muted-foreground hover:fill-foreground'
-                                    }`}
+                                      }`}
                                   >
                                     {p.label}
                                   </text>
                                 )}
-                                
+
                                 {/* Điểm chấm Doanh thu */}
-                                <circle 
-                                  cx={p.x} 
-                                  cy={p.y} 
-                                  r={isTodayFiltered ? "5" : "3"} 
+                                <circle
+                                  cx={p.x}
+                                  cy={p.y}
+                                  r={isTodayFiltered ? "5" : "3"}
                                   onClick={() => setSelectedTimePoint(selectedTimePoint === p.label ? null : p.label)}
-                                  className={`cursor-pointer transition-all duration-150 ${
-                                    isTodayFiltered 
-                                      ? 'fill-primary stroke-background stroke-[2px]' 
+                                  className={`cursor-pointer transition-all duration-150 ${isTodayFiltered
+                                      ? 'fill-primary stroke-background stroke-[2px]'
                                       : 'fill-background stroke-primary stroke-[1.5px] group-hover/subpoint:r-5'
-                                  }`}
+                                    }`}
                                 />
 
                                 {/* Điểm chấm Số lượng bán */}
-                                <circle 
-                                  cx={p.x} 
-                                  cy={pointsQty[idx].y} 
-                                  r="2" 
+                                <circle
+                                  cx={p.x}
+                                  cy={pointsQty[idx].y}
+                                  r="2"
                                   className="fill-background stroke-amber-500 stroke-[1px] opacity-60 group-hover/subpoint:opacity-100 pointer-events-none"
                                 />
-                                
+
                                 {/* Vùng nhạy cảm click & hover */}
-                                <circle 
-                                  cx={p.x} 
-                                  cy={p.y} 
-                                  r="16" 
+                                <circle
+                                  cx={p.x}
+                                  cy={p.y}
+                                  r="16"
                                   onClick={() => setSelectedTimePoint(selectedTimePoint === p.label ? null : p.label)}
                                   className="fill-transparent cursor-pointer"
                                 />
-                                
+
                                 {/* Tooltip chi tiết của ngày */}
                                 <g className="opacity-0 group-hover/subpoint:opacity-100 pointer-events-none transition-opacity duration-150">
-                                  <rect 
-                                    x={p.x - 60} 
-                                    y={Math.min(p.y, pointsQty[idx].y, pointsCancelled[idx].y) - 60} 
-                                    width={120} 
-                                    height={52} 
-                                    rx={6} 
+                                  <rect
+                                    x={p.x - 60}
+                                    y={Math.min(p.y, pointsQty[idx].y, pointsCancelled[idx].y) - 60}
+                                    width={120}
+                                    height={52}
+                                    rx={6}
                                     className="fill-foreground dark:fill-background stroke-border stroke shadow-xl"
                                   />
-                                  <text 
-                                    x={p.x} 
-                                    y={Math.min(p.y, pointsQty[idx].y, pointsCancelled[idx].y) - 48} 
-                                    textAnchor="middle" 
+                                  <text
+                                    x={p.x}
+                                    y={Math.min(p.y, pointsQty[idx].y, pointsCancelled[idx].y) - 48}
+                                    textAnchor="middle"
                                     className="fill-background dark:fill-foreground text-[8px] font-black"
                                   >
                                     Ngày {p.label}
                                   </text>
-                                  <text 
-                                    x={p.x - 52} 
-                                    y={Math.min(p.y, pointsQty[idx].y, pointsCancelled[idx].y) - 37} 
-                                    textAnchor="start" 
+                                  <text
+                                    x={p.x - 52}
+                                    y={Math.min(p.y, pointsQty[idx].y, pointsCancelled[idx].y) - 37}
+                                    textAnchor="start"
                                     className="fill-background dark:fill-foreground text-[8px]"
                                   >
                                     💰 Doanh thu: {formatPrice(p.value)}
                                   </text>
-                                  <text 
-                                    x={p.x - 52} 
-                                    y={Math.min(p.y, pointsQty[idx].y, pointsCancelled[idx].y) - 27} 
-                                    textAnchor="start" 
+                                  <text
+                                    x={p.x - 52}
+                                    y={Math.min(p.y, pointsQty[idx].y, pointsCancelled[idx].y) - 27}
+                                    textAnchor="start"
                                     className="fill-background dark:fill-foreground text-[8px]"
                                   >
                                     🛍️ Đã bán: {p.qty} chiếc
                                   </text>
-                                  <text 
-                                    x={p.x - 52} 
-                                    y={Math.min(p.y, pointsQty[idx].y, pointsCancelled[idx].y) - 17} 
-                                    textAnchor="start" 
+                                  <text
+                                    x={p.x - 52}
+                                    y={Math.min(p.y, pointsQty[idx].y, pointsCancelled[idx].y) - 17}
+                                    textAnchor="start"
                                     className="fill-rose-400 dark:fill-rose-500 text-[8px] font-semibold"
                                   >
                                     ❌ Đơn hủy: {p.cancelled} đơn
@@ -2052,14 +2094,14 @@ export default function AdminPage() {
                     );
                   }
 
-                  const activeData = 
-                    chartTab === 'month' 
-                      ? stats.monthlyRevenue 
-                      : chartTab === 'week' 
-                        ? stats.weeklyRevenue 
+                  const activeData =
+                    chartTab === 'month'
+                      ? stats.monthlyRevenue
+                      : chartTab === 'week'
+                        ? stats.weeklyRevenue
                         : stats.hourlyRevenue || [];
                   const maxVal = Math.max(...activeData.map((d: any) => d.value), 1000000);
-                  
+
                   // Thiết lập thông số tọa độ biểu đồ
                   const svgWidth = 600;
                   const svgHeight = 220;
@@ -2067,29 +2109,29 @@ export default function AdminPage() {
                   const paddingRight = 30;
                   const paddingTop = 20;
                   const paddingBottom = 30;
-                  
+
                   const chartWidth = svgWidth - paddingLeft - paddingRight;
                   const chartHeight = svgHeight - paddingTop - paddingBottom;
-                  
+
                   const points = activeData.map((item: any, idx: number) => {
                     const x = paddingLeft + (idx * (chartWidth / (activeData.length - 1)));
                     const y = svgHeight - paddingBottom - (item.value / maxVal) * chartHeight;
                     return { x, y, label: item.label, value: item.value };
                   });
-                  
+
                   // Tạo chuỗi đường dẫn d cho thẻ path (đường line)
                   const linePath = points.reduce((acc: string, p: any, idx: number) => {
                     return idx === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`;
                   }, '');
-                  
+
                   // Tạo chuỗi đường dẫn khép kín để đổ màu gradient (Area chart)
-                  const areaPath = points.length > 0 
+                  const areaPath = points.length > 0
                     ? `${linePath} L ${points[points.length - 1].x} ${svgHeight - paddingBottom} L ${points[0].x} ${svgHeight - paddingBottom} Z`
                     : '';
 
                   // Các mốc lưới ngang (Grid lines) Y: 0%, 25%, 50%, 75%, 100%
                   const gridTicks = [0, 0.25, 0.5, 0.75, 1];
-                  
+
                   return (
                     <div className="relative w-full overflow-hidden bg-background/25 rounded-2xl p-2">
                       <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-auto overflow-visible">
@@ -2100,7 +2142,7 @@ export default function AdminPage() {
                             <stop offset="100%" stopColor="var(--primary)" stopOpacity="0.0" />
                           </linearGradient>
                         </defs>
-                        
+
                         {/* 1. Vẽ các đường lưới ngang (Grid Lines) & Nhãn trục Y */}
                         {gridTicks.map((tick: number, i: number) => {
                           const y = svgHeight - paddingBottom - tick * chartHeight;
@@ -2108,21 +2150,21 @@ export default function AdminPage() {
                           return (
                             <g key={i} className="opacity-40">
                               {/* Đường lưới đứt nét */}
-                              <line 
-                                x1={paddingLeft} 
-                                y1={y} 
-                                x2={svgWidth - paddingRight} 
-                                y2={y} 
-                                stroke="currentColor" 
-                                strokeWidth="1" 
-                                strokeDasharray="3 3" 
+                              <line
+                                x1={paddingLeft}
+                                y1={y}
+                                x2={svgWidth - paddingRight}
+                                y2={y}
+                                stroke="currentColor"
+                                strokeWidth="1"
+                                strokeDasharray="3 3"
                                 className="text-border/80"
                               />
                               {/* Nhãn trục Y */}
-                              <text 
-                                x={paddingLeft - 10} 
-                                y={y + 3.5} 
-                                textAnchor="end" 
+                              <text
+                                x={paddingLeft - 10}
+                                y={y + 3.5}
+                                textAnchor="end"
                                 className="fill-muted-foreground text-[9px] font-bold"
                               >
                                 {tick === 0 ? '0' : formatPrice(val)}
@@ -2130,33 +2172,33 @@ export default function AdminPage() {
                             </g>
                           );
                         })}
-                        
+
                         {/* 2. Đổ vùng màu Gradient phía dưới đường dẫn (Area fill) */}
                         {areaPath && (
                           <path d={areaPath} fill="url(#chartAreaGrad)" />
                         )}
-                        
+
                         {/* 3. Vẽ đường Line chính */}
                         {linePath && (
-                          <path 
-                            d={linePath} 
-                            fill="none" 
-                            stroke="var(--primary)" 
-                            strokeWidth="3" 
+                          <path
+                            d={linePath}
+                            fill="none"
+                            stroke="var(--primary)"
+                            strokeWidth="3"
                             strokeLinecap="round"
                             strokeLinejoin="round"
                             className="drop-shadow-[0_2px_4px_rgba(var(--primary-rgb),0.15)]"
                           />
                         )}
-                        
+
                         {/* 4. Vẽ các chấm tròn toạ độ tương tác + Nhãn trục X */}
                         {points.map((p: any, idx: number) => (
                           <g key={idx} className="group/point">
                             {/* Nhãn trục X bên dưới biểu đồ */}
-                            <text 
-                              x={p.x} 
-                              y={svgHeight - 6} 
-                              textAnchor="middle" 
+                            <text
+                              x={p.x}
+                              y={svgHeight - 6}
+                              textAnchor="middle"
                               onClick={() => {
                                 if (chartTab === 'month') {
                                   setSelectedSubChartMonth(p.label);
@@ -2165,20 +2207,19 @@ export default function AdminPage() {
                                   setSelectedTimePoint(selectedTimePoint === p.label ? null : p.label);
                                 }
                               }}
-                              className={`cursor-pointer text-[10px] font-extrabold transition-all duration-150 ${
-                                selectedTimePoint === p.label 
-                                  ? 'fill-primary scale-110 font-black' 
+                              className={`cursor-pointer text-[10px] font-extrabold transition-all duration-150 ${selectedTimePoint === p.label
+                                  ? 'fill-primary scale-110 font-black'
                                   : 'fill-muted-foreground hover:fill-foreground'
-                              }`}
+                                }`}
                             >
                               {p.label}
                             </text>
-                            
+
                             {/* Chấm tròn chính */}
-                            <circle 
-                              cx={p.x} 
-                              cy={p.y} 
-                              r={selectedTimePoint === p.label ? "6.5" : "4.5"} 
+                            <circle
+                              cx={p.x}
+                              cy={p.y}
+                              r={selectedTimePoint === p.label ? "6.5" : "4.5"}
                               onClick={() => {
                                 if (chartTab === 'month') {
                                   setSelectedSubChartMonth(p.label);
@@ -2187,18 +2228,17 @@ export default function AdminPage() {
                                   setSelectedTimePoint(selectedTimePoint === p.label ? null : p.label);
                                 }
                               }}
-                              className={`cursor-pointer transition-all duration-150 ${
-                                selectedTimePoint === p.label 
-                                  ? 'fill-primary stroke-background stroke-[3px]' 
+                              className={`cursor-pointer transition-all duration-150 ${selectedTimePoint === p.label
+                                  ? 'fill-primary stroke-background stroke-[3px]'
                                   : 'fill-background stroke-primary stroke-[2.5px] group-hover/point:r-6 group-hover/point:stroke-[3.5px]'
-                              }`}
+                                }`}
                             />
-                            
+
                             {/* Tooltip vùng nhạy cảm lớn hơn để dễ hover */}
-                            <circle 
-                              cx={p.x} 
-                              cy={p.y} 
-                              r="16" 
+                            <circle
+                              cx={p.x}
+                              cy={p.y}
+                              r="16"
                               onClick={() => {
                                 if (chartTab === 'month') {
                                   setSelectedSubChartMonth(p.label);
@@ -2209,21 +2249,21 @@ export default function AdminPage() {
                               }}
                               className="fill-transparent cursor-pointer"
                             />
-                            
+
                             {/* Tooltip hiển thị số tiền khi hover */}
                             <g className="opacity-0 group-hover/point:opacity-100 pointer-events-none transition-opacity duration-150">
-                              <rect 
-                                x={p.x - 55} 
-                                y={p.y - 30} 
-                                width="110" 
-                                height="20" 
-                                rx="5" 
+                              <rect
+                                x={p.x - 55}
+                                y={p.y - 30}
+                                width="110"
+                                height="20"
+                                rx="5"
                                 className="fill-foreground dark:fill-background stroke-border stroke shadow-lg"
                               />
-                              <text 
-                                x={p.x} 
-                                y={p.y - 17} 
-                                textAnchor="middle" 
+                              <text
+                                x={p.x}
+                                y={p.y - 17}
+                                textAnchor="middle"
                                 className="fill-background dark:fill-foreground text-[9px] font-extrabold"
                               >
                                 {formatPrice(p.value)}
@@ -2235,7 +2275,7 @@ export default function AdminPage() {
                     </div>
                   );
                 })()}
-                
+
                 <div className="text-[10px] text-muted-foreground text-center italic flex items-center justify-center gap-1.5 pt-1">
                   <Info className="w-3.5 h-3.5 text-primary" />
                   <span>Dữ liệu doanh thu thực tế được tổng hợp từ các đơn hàng đã đặt (không tính đơn bị hủy)</span>
@@ -2249,16 +2289,16 @@ export default function AdminPage() {
                     <div>
                       <h3 className="text-sm font-bold text-foreground">Tỷ lệ bán được theo loại</h3>
                       <p className="text-[10px] text-muted-foreground">
-                        {selectedTimePoint 
-                          ? `Lọc ngày: ${selectedTimePoint}` 
-                          : selectedSubChartMonth 
-                            ? `Lọc tháng: ${selectedSubChartMonth}` 
+                        {selectedTimePoint
+                          ? `Lọc ngày: ${selectedTimePoint}`
+                          : selectedSubChartMonth
+                            ? `Lọc tháng: ${selectedSubChartMonth}`
                             : 'Thống kê tổng hợp toàn thời gian'
                         }
                       </p>
                     </div>
                     {(selectedTimePoint || selectedSubChartMonth) && (
-                      <button 
+                      <button
                         onClick={() => {
                           setSelectedTimePoint(null);
                           setSelectedSubChartMonth(null);
@@ -2279,7 +2319,7 @@ export default function AdminPage() {
                         </div>
                         {/* Thanh Progress bar */}
                         <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                          <div 
+                          <div
                             className={`h-full rounded-full transition-all duration-700 ease-out ${item.colorClass}`}
                             style={{ width: `${item.percentage}%` }}
                           />
@@ -2333,14 +2373,14 @@ export default function AdminPage() {
 
             {/* Khối Tồn kho thấp & Đơn hàng mới nhất ở chân Dashboard */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              
+
               {/* Đơn hàng mới nhất */}
               <div className="lg:col-span-2 rounded-2xl border border-border bg-card/40 p-5 space-y-3.5 shadow-sm">
                 <div className="border-b border-border pb-2 flex justify-between items-center">
                   <h3 className="text-sm font-bold text-foreground">Đơn đặt hàng mới nhận</h3>
                   <button onClick={() => setPanel('orders')} className="text-xs text-primary hover:underline font-bold">Xem tất cả</button>
                 </div>
-                
+
                 <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
                   {orders.length === 0 ? (
                     <p className="text-xs text-muted-foreground py-8 text-center">Chưa có đơn hàng nào trong hệ thống.</p>
@@ -2422,7 +2462,7 @@ export default function AdminPage() {
               const totalProdPages = Math.ceil(filteredProducts.length / ADMIN_ITEMS_PER_PAGE);
               const startIdx = (prodCurrentPage - 1) * ADMIN_ITEMS_PER_PAGE;
               const currentAdminProducts = filteredProducts.slice(startIdx, startIdx + ADMIN_ITEMS_PER_PAGE);
-              
+
               const getAdminPageNumbers = () => {
                 const pages: (number | string)[] = [];
                 const maxVisible = 5;
@@ -2456,21 +2496,20 @@ export default function AdminPage() {
                         />
                         <Search className="absolute left-3.5 top-3 w-4 h-4 text-muted-foreground" />
                       </div>
-                      
+
                       <div className="relative" ref={catDropdownRef}>
                         <button
                           type="button"
                           onClick={() => setIsCatDropdownOpen(!isCatDropdownOpen)}
-                          className={`h-10 px-4 rounded-xl border text-sm flex items-center justify-between gap-1.5 cursor-pointer transition-all ${
-                            isCatDropdownOpen || prodFilterCategory
+                          className={`h-10 px-4 rounded-xl border text-sm flex items-center justify-between gap-1.5 cursor-pointer transition-all ${isCatDropdownOpen || prodFilterCategory
                               ? 'border-primary bg-primary/5 text-foreground'
                               : 'border-border bg-card text-muted-foreground hover:text-foreground hover:border-muted-foreground/35'
-                          }`}
+                            }`}
                         >
                           <span>{prodFilterCategory ? (CATEGORIES.find(c => c.value === prodFilterCategory)?.label || prodFilterCategory) : '-- Tất cả danh mục --'}</span>
                           <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isCatDropdownOpen ? 'rotate-180' : ''}`} />
                         </button>
-                        
+
                         {isCatDropdownOpen && (
                           <div className="absolute top-[calc(100%+4px)] left-0 w-56 bg-card border border-border rounded-xl shadow-2xl p-1.5 z-40 animate-in fade-in slide-in-from-top-1 duration-150">
                             <div className="max-h-48 overflow-y-auto pr-1 custom-scroll space-y-0.5">
@@ -2479,9 +2518,8 @@ export default function AdminPage() {
                                   setProdFilterCategory('');
                                   setIsCatDropdownOpen(false);
                                 }}
-                                className={`px-3 py-2 rounded-lg text-xs cursor-pointer transition-colors ${
-                                  !prodFilterCategory ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-muted/60 text-muted-foreground hover:text-foreground'
-                                }`}
+                                className={`px-3 py-2 rounded-lg text-xs cursor-pointer transition-colors ${!prodFilterCategory ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-muted/60 text-muted-foreground hover:text-foreground'
+                                  }`}
                               >
                                 -- Tất cả danh mục --
                               </div>
@@ -2492,9 +2530,8 @@ export default function AdminPage() {
                                     setProdFilterCategory(c.value);
                                     setIsCatDropdownOpen(false);
                                   }}
-                                  className={`px-3 py-2 rounded-lg text-xs cursor-pointer transition-colors ${
-                                    prodFilterCategory === c.value ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-muted/60 text-muted-foreground hover:text-foreground'
-                                  }`}
+                                  className={`px-3 py-2 rounded-lg text-xs cursor-pointer transition-colors ${prodFilterCategory === c.value ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-muted/60 text-muted-foreground hover:text-foreground'
+                                    }`}
                                 >
                                   {c.label}
                                 </div>
@@ -2543,13 +2580,12 @@ export default function AdminPage() {
                               </td>
                               {!modalOpen && (
                                 <td className="px-4 py-3 text-right">
-                                  <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-bold ${
-                                    p.stock > 10
+                                  <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-bold ${p.stock > 10
                                       ? 'bg-success/10 text-success'
                                       : p.stock > 0
-                                      ? 'bg-amber-500/10 text-amber-500'
-                                      : 'bg-destructive/10 text-destructive'
-                                  }`}>
+                                        ? 'bg-amber-500/10 text-amber-500'
+                                        : 'bg-destructive/10 text-destructive'
+                                    }`}>
                                     <span>{p.stock}</span>
                                     <span className="text-[10px] font-normal text-muted-foreground">sp</span>
                                   </span>
@@ -2588,7 +2624,7 @@ export default function AdminPage() {
                         >
                           <ChevronLeft className="w-4.5 h-4.5" />
                         </button>
-                        
+
                         <div className="flex items-center gap-1">
                           {getAdminPageNumbers().map((page, index) => {
                             if (page === '...') {
@@ -2603,11 +2639,10 @@ export default function AdminPage() {
                                 key={`admin-page-${page}`}
                                 type="button"
                                 onClick={() => setProdCurrentPage(Number(page))}
-                                className={`w-9 h-9 rounded-lg text-xs font-black transition-all cursor-pointer border ${
-                                  prodCurrentPage === page
+                                className={`w-9 h-9 rounded-lg text-xs font-black transition-all cursor-pointer border ${prodCurrentPage === page
                                     ? 'bg-primary border-primary text-primary-foreground shadow-sm shadow-primary/20 scale-105'
                                     : 'bg-card border-border text-muted-foreground hover:text-foreground hover:bg-muted'
-                                }`}
+                                  }`}
                               >
                                 {page}
                               </button>
@@ -2684,11 +2719,10 @@ export default function AdminPage() {
                                           setFormProduct({ ...formProduct, category: c.value });
                                           setIsFormCatOpen(false);
                                         }}
-                                        className={`w-full text-left px-3 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                                          formProduct.category === c.value
+                                        className={`w-full text-left px-3 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${formProduct.category === c.value
                                             ? 'bg-primary/10 text-primary'
                                             : 'hover:bg-muted text-foreground'
-                                        }`}
+                                          }`}
                                       >
                                         {c.label}
                                       </button>
@@ -3046,27 +3080,24 @@ export default function AdminPage() {
                                 <button
                                   type="button"
                                   onClick={() => setNewTagType('color')}
-                                  className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors cursor-pointer ${
-                                    newTagType === 'color' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground'
-                                  }`}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors cursor-pointer ${newTagType === 'color' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground'
+                                    }`}
                                 >
                                   🎨 Màu sắc
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => setNewTagType('ram_rom')}
-                                  className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors cursor-pointer ${
-                                    newTagType === 'ram_rom' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground'
-                                  }`}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors cursor-pointer ${newTagType === 'ram_rom' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground'
+                                    }`}
                                 >
                                   ⚙️ RAM / ROM
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => setNewTagType('condition')}
-                                  className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors cursor-pointer ${
-                                    newTagType === 'condition' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground'
-                                  }`}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors cursor-pointer ${newTagType === 'condition' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground'
+                                    }`}
                                 >
                                   📦 Tình trạng
                                 </button>
@@ -3356,7 +3387,7 @@ export default function AdminPage() {
                                   const colorTag = tags.find(t => t.type === 'color');
                                   const ramRomTag = tags.find(t => t.type === 'ram_rom');
                                   const condTag = tags.find(t => t.type === 'condition');
-                                  
+
                                   const colorVal = colorTag ? colorTag.value : '';
                                   const ramRomVal = ramRomTag ? ramRomTag.value : '';
                                   const condVal = condTag ? condTag.value : '';
@@ -3371,11 +3402,10 @@ export default function AdminPage() {
                                       key={vs.id}
                                       type="button"
                                       onClick={() => setSelectedVariantIdx(idx)}
-                                      className={`w-full text-left p-2 rounded-lg text-[10px] font-bold transition-all relative border flex flex-col gap-0.5 cursor-pointer ${
-                                        selectedVariantIdx === idx
+                                      className={`w-full text-left p-2 rounded-lg text-[10px] font-bold transition-all relative border flex flex-col gap-0.5 cursor-pointer ${selectedVariantIdx === idx
                                           ? 'bg-primary/10 border-primary text-primary shadow-sm'
                                           : 'bg-card border-border/60 hover:bg-muted text-foreground'
-                                      }`}
+                                        }`}
                                     >
                                       <span className={selectedVariantIdx === idx ? 'text-primary/75 text-[9px]' : 'text-muted-foreground text-[9px]'}>
                                         # {idx + 1}
@@ -3728,11 +3758,10 @@ export default function AdminPage() {
                           key={st}
                           disabled={updatingOrderStatus}
                           onClick={() => handleUpdateOrderStatus(selectedOrder.id, st)}
-                          className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer border ${
-                            selectedOrder.status === st 
-                              ? 'bg-primary text-primary-foreground border-primary shadow-sm shadow-primary/20' 
+                          className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer border ${selectedOrder.status === st
+                              ? 'bg-primary text-primary-foreground border-primary shadow-sm shadow-primary/20'
                               : 'bg-background hover:bg-muted text-muted-foreground border-border'
-                          }`}
+                            }`}
                         >
                           {st === 'pending' && 'Chờ xử lý'}
                           {st === 'processing' && 'Duyệt / Chuẩn bị'}
@@ -3816,7 +3845,7 @@ export default function AdminPage() {
                   <h1 className="text-xl sm:text-2xl font-black text-foreground">Nhân viên & Khách hàng</h1>
                   <p className="text-xs text-muted-foreground">Danh sách tài khoản đã đăng ký và phân loại vai trò (Role)</p>
                 </div>
-                <button 
+                <button
                   onClick={fetchUsersList}
                   disabled={isUsersLoading}
                   className="p-2.5 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-50 transition-all cursor-pointer"
@@ -3833,11 +3862,10 @@ export default function AdminPage() {
                   <button
                     type="button"
                     onClick={() => setUserTab('staff')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      userTab === 'staff'
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${userTab === 'staff'
                         ? 'bg-primary text-primary-foreground shadow-sm'
                         : 'text-muted-foreground hover:text-foreground'
-                    }`}
+                      }`}
                   >
                     💼 Nhân viên / Admin ({users.filter(u => {
                       const r = u.user_metadata?.role || 'customer';
@@ -3847,11 +3875,10 @@ export default function AdminPage() {
                   <button
                     type="button"
                     onClick={() => setUserTab('customer')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      userTab === 'customer'
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${userTab === 'customer'
                         ? 'bg-primary text-primary-foreground shadow-sm'
                         : 'text-muted-foreground hover:text-foreground'
-                    }`}
+                      }`}
                   >
                     👤 Khách hàng ({users.filter(u => {
                       const r = u.user_metadata?.role || 'customer';
@@ -3896,268 +3923,269 @@ export default function AdminPage() {
                         <tbody className="divide-y divide-border overflow-visible">
                           {filteredUsers.map((u) => {
                             const role = u.user_metadata?.role || 'customer';
-                          return (
-                            <tr key={u.id} className={`hover:bg-muted/30 transition-colors ${selectedUserDetail?.id === u.id ? 'bg-primary/5 border-l-2 border-l-primary' : ''}`}>
-                              <td className="px-4 py-3">
-                                <div className="flex items-center gap-3">
-                                  {u.user_metadata?.avatar_url ? (
-                                    <img src={u.user_metadata.avatar_url} alt="avatar" className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
-                                  ) : (
-                                    <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold uppercase flex-shrink-0">
-                                      {u.email?.substring(0, 2)}
-                                    </div>
-                                  )}
-                                  <span className="font-semibold text-foreground truncate max-w-[140px]">{u.user_metadata?.full_name || 'Khách hàng'}</span>
-                                </div>
-                              </td>
-                              {!selectedUserDetail && <td className="px-4 py-3 text-muted-foreground">{u.email}</td>}
-                              {!selectedUserDetail && <td className="px-4 py-3 text-xs text-muted-foreground">{u.created_at ? new Date(u.created_at).toLocaleDateString('vi-VN') : ''}</td>}
-                              <td className="px-4 py-3">
-                                <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold border uppercase tracking-wide ${
-                                  role === 'admin' ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' : role === 'staff' ? 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20' : 'bg-muted text-muted-foreground border-border'
-                                }`}>
-                                  {role === 'admin' ? 'Quản trị' : role === 'staff' ? 'Nhân viên' : 'Khách hàng'}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 text-right">
-                                {isAdmin ? (
-                                  <div className="relative inline-block text-left role-dropdown-container">
-                                    <button
-                                      type="button"
-                                      disabled={updatingUserRole === u.id}
-                                      onClick={() => setActiveUserRoleDropdown(activeUserRoleDropdown === u.id ? null : u.id)}
-                                      className={`h-8 px-2.5 rounded-lg border text-xs flex items-center justify-between gap-1.5 cursor-pointer disabled:opacity-50 transition-all ${
-                                        activeUserRoleDropdown === u.id
-                                          ? 'border-primary bg-primary/5 text-foreground'
-                                          : 'border-border bg-background text-muted-foreground hover:text-foreground'
-                                      }`}
-                                    >
-                                      <span>
-                                        {role === 'admin' ? 'Quản trị' : role === 'staff' ? 'Nhân viên' : 'Khách hàng'}
-                                      </span>
-                                      <ChevronDown className="w-3.5 h-3.5" />
-                                    </button>
-                                    
-                                    {activeUserRoleDropdown === u.id && (
-                                      <div className="absolute top-[calc(100%+4px)] right-0 w-36 bg-card border border-border rounded-xl shadow-2xl p-1 z-35 animate-in fade-in slide-in-from-top-1 duration-150">
-                                        <div className="max-h-36 overflow-y-auto pr-1 custom-scroll space-y-0.5">
-                                          {[
-                                            { val: 'customer', label: 'Khách hàng' },
-                                            { val: 'staff', label: 'Nhân viên' },
-                                            { val: 'admin', label: 'Quản trị viên' }
-                                          ].map((opt) => (
-                                            <div
-                                              key={opt.val}
-                                              onClick={() => {
-                                                setActiveUserRoleDropdown(null);
-                                                if (opt.val !== role) {
-                                                  setPendingRoleChange({ userId: u.id, newRole: opt.val });
-                                                  setRoleConfirmOpen(true);
-                                                }
-                                              }}
-                                              className={`px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
-                                                role === opt.val ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-muted/60 text-muted-foreground hover:text-foreground'
-                                              }`}
-                                            >
-                                              {opt.label}
-                                            </div>
-                                          ))}
-                                        </div>
+                            return (
+                              <tr key={u.id} className={`hover:bg-muted/30 transition-colors ${selectedUserDetail?.id === u.id ? 'bg-primary/5 border-l-2 border-l-primary' : ''}`}>
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center gap-3">
+                                    {u.user_metadata?.avatar_url ? (
+                                      <img src={u.user_metadata.avatar_url} alt="avatar" className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
+                                    ) : (
+                                      <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold uppercase flex-shrink-0">
+                                        {u.email?.substring(0, 2)}
                                       </div>
                                     )}
+                                    <span className="font-semibold text-foreground truncate max-w-[140px]">{u.user_metadata?.full_name || 'Khách hàng'}</span>
                                   </div>
-                                ) : (
-                                  <span className="text-[10px] text-muted-foreground/60 italic font-medium">Chỉ Admin được gán</span>
-                                )}
-                              </td>
-                              <td className="px-4 py-3 text-right">
-                                <button
-                                  onClick={async () => {
-                                    setSelectedUserDetail(u);
-                                    setUserOrderStats({ totalOrders: 0, completedOrders: 0, cancelledOrders: 0, totalSpent: 0, totalItems: 0, categoryBreakdown: {}, isLoading: true });
-                                    try {
-                                      const { data: ordersData } = await supabase
-                                        .from('orders')
-                                        .select('*')
-                                        .eq('user_id', u.id)
-                                        .order('created_at', { ascending: false });
-                                      const ords = ordersData || [];
-                                      const completed = ords.filter((o: any) => o.status === 'delivered' || o.status === 'completed');
-                                      const cancelled = ords.filter((o: any) => o.status === 'cancelled');
-                                      const totalSpent = completed.reduce((sum: number, o: any) => sum + (o.total || 0), 0);
-                                      // Đếm số sản phẩm và phân loại
-                                      let totalItems = 0;
-                                      const categoryBreakdown: Record<string, number> = {};
-                                      completed.forEach((o: any) => {
-                                        const items = o.items || [];
-                                        items.forEach((item: any) => {
-                                          totalItems += (item.quantity || 1);
-                                          const cat = item.category || item.cat || 'Khác';
-                                          categoryBreakdown[cat] = (categoryBreakdown[cat] || 0) + (item.quantity || 1);
-                                        });
-                                      });
-                                      setUserOrderStats({ totalOrders: ords.length, completedOrders: completed.length, cancelledOrders: cancelled.length, totalSpent, totalItems, categoryBreakdown, isLoading: false });
-                                    } catch {
-                                      setUserOrderStats(prev => prev ? { ...prev, isLoading: false } : null);
-                                    }
-                                  }}
-                                  className="px-2.5 py-1 text-xs rounded-lg border border-border hover:bg-muted text-foreground font-bold cursor-pointer transition-colors"
-                                >
-                                  Xem chi tiết
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                        {users.length === 0 && (
-                          <tr>
-                            <td colSpan={selectedUserDetail ? 4 : 6} className="px-4 py-10 text-center text-muted-foreground text-sm">Không tải được thông tin thành viên.</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                                </td>
+                                {!selectedUserDetail && <td className="px-4 py-3 text-muted-foreground">{u.email}</td>}
+                                {!selectedUserDetail && <td className="px-4 py-3 text-xs text-muted-foreground">{u.created_at ? new Date(u.created_at).toLocaleDateString('vi-VN') : ''}</td>}
+                                <td className="px-4 py-3">
+                                  <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold border uppercase tracking-wide ${role === 'admin' ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' : role === 'staff' ? 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20' : 'bg-muted text-muted-foreground border-border'
+                                    }`}>
+                                    {role === 'admin' ? 'Quản trị' : role === 'staff' ? 'Nhân viên' : 'Khách hàng'}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  {isAdmin ? (
+                                    <div className="relative inline-block text-left role-dropdown-container">
+                                      <button
+                                        type="button"
+                                        disabled={updatingUserRole === u.id}
+                                        onClick={() => setActiveUserRoleDropdown(activeUserRoleDropdown === u.id ? null : u.id)}
+                                        className={`h-8 px-2.5 rounded-lg border text-xs flex items-center justify-between gap-1.5 cursor-pointer disabled:opacity-50 transition-all ${activeUserRoleDropdown === u.id
+                                            ? 'border-primary bg-primary/5 text-foreground'
+                                            : 'border-border bg-background text-muted-foreground hover:text-foreground'
+                                          }`}
+                                      >
+                                        <span>
+                                          {role === 'admin' ? 'Quản trị' : role === 'staff' ? 'Nhân viên' : 'Khách hàng'}
+                                        </span>
+                                        <ChevronDown className="w-3.5 h-3.5" />
+                                      </button>
 
-                {/* CỘT PHẢI: CHI TIẾT NGƯỜI DÙNG / NHÂN VIÊN (STICKY SIDEBAR) */}
-                {selectedUserDetail && (
-                  <div className="w-full lg:w-[400px] xl:w-[440px] bg-card border border-border rounded-2xl shadow-2xl p-5 sticky top-6 max-h-[calc(100vh-160px)] overflow-y-auto custom-scroll animate-in slide-in-from-right duration-300 flex-shrink-0 space-y-4 text-xs">
-                    <div className="flex items-center justify-between pb-3 border-b border-border">
-                      <h2 className="text-sm font-bold text-foreground">Thông tin tài khoản</h2>
-                      <button onClick={() => setSelectedUserDetail(null)} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer">
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-
-                    <div className="flex flex-col items-center py-4 space-y-3 bg-muted/20 rounded-xl border border-border">
-                      {selectedUserDetail.user_metadata?.avatar_url ? (
-                        <img src={selectedUserDetail.user_metadata.avatar_url} alt="avatar" className="w-16 h-16 rounded-full border border-border object-cover" />
-                      ) : (
-                        <div className="w-16 h-16 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xl font-bold uppercase border border-border">
-                          {selectedUserDetail.email?.substring(0, 2)}
-                        </div>
-                      )}
-                      <div className="text-center">
-                        <h3 className="font-bold text-foreground text-sm">{selectedUserDetail.user_metadata?.full_name || 'Khách hàng'}</h3>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">{selectedUserDetail.email}</p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2.5">
-                      <div className="flex justify-between items-center py-1.5 border-b border-border/40 font-bold">
-                        <span className="text-muted-foreground font-medium">Mã tài khoản (UID):</span>
-                        <span className="font-mono text-[10px] text-foreground">{selectedUserDetail.id}</span>
-                      </div>
-                      <div className="flex justify-between items-center py-1.5 border-b border-border/40 font-bold">
-                        <span className="text-muted-foreground font-medium">Vai trò hệ thống:</span>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border uppercase ${
-                          (selectedUserDetail.user_metadata?.role || 'customer') === 'admin'
-                            ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
-                            : (selectedUserDetail.user_metadata?.role || 'customer') === 'staff'
-                            ? 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20'
-                            : 'bg-muted text-muted-foreground border-border'
-                        }`}>
-                          {(selectedUserDetail.user_metadata?.role || 'customer') === 'admin' ? 'Quản trị' : (selectedUserDetail.user_metadata?.role || 'customer') === 'staff' ? 'Nhân viên' : 'Khách hàng'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-1.5 border-b border-border/40 font-bold">
-                        <span className="text-muted-foreground font-medium">Số điện thoại:</span>
-                        <span className="text-foreground">{selectedUserDetail.user_metadata?.phone || <span className="italic text-muted-foreground/50 text-[10px]">Chưa cung cấp</span>}</span>
-                      </div>
-                      <div className="flex justify-between items-center py-1.5 border-b border-border/40 font-bold">
-                        <span className="text-muted-foreground font-medium">Ngày sinh:</span>
-                        <span className="text-foreground">
-                          {selectedUserDetail.user_metadata?.birthday
-                            ? new Date(selectedUserDetail.user_metadata.birthday).toLocaleDateString('vi-VN')
-                            : <span className="italic text-muted-foreground/50 text-[10px]">Chưa cung cấp</span>}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-1.5 border-b border-border/40 font-bold">
-                        <span className="text-muted-foreground font-medium">Địa chỉ:</span>
-                        <span className="text-foreground text-right max-w-[60%]">{selectedUserDetail.user_metadata?.address || <span className="italic text-muted-foreground/50 text-[10px]">Chưa cung cấp</span>}</span>
-                      </div>
-                      <div className="flex justify-between items-center py-1.5 border-b border-border/40 font-bold">
-                        <span className="text-muted-foreground font-medium">Ngày đăng ký:</span>
-                        <span className="text-foreground">
-                          {selectedUserDetail.created_at ? new Date(selectedUserDetail.created_at).toLocaleDateString('vi-VN') + ' ' + new Date(selectedUserDetail.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : ''}
-                        </span>
-                      </div>
-
-                      {/* ── THỐNG KÊ MUA HÀNG ── */}
-                      <div className="space-y-2 border-t border-border pt-3">
-                        <p className="text-[11px] font-black text-foreground flex items-center gap-1.5 mb-2">
-                          📊 Thống kê mua hàng
-                        </p>
-                        {userOrderStats?.isLoading ? (
-                          <div className="flex items-center justify-center py-4">
-                            <Loader2 className="w-5 h-5 text-primary animate-spin" />
-                          </div>
-                        ) : userOrderStats ? (
-                          <>
-                            <div className="grid grid-cols-2 gap-2">
-                              <div className="bg-primary/5 border border-primary/20 rounded-xl p-2.5 text-center">
-                                <div className="text-base font-black text-primary">{userOrderStats.completedOrders}</div>
-                                <div className="text-[10px] text-muted-foreground">Đơn hoàn thành</div>
-                              </div>
-                              <div className="bg-muted/40 border border-border rounded-xl p-2.5 text-center">
-                                <div className="text-base font-black text-foreground">{userOrderStats.totalOrders}</div>
-                                <div className="text-[10px] text-muted-foreground">Tổng đơn hàng</div>
-                              </div>
-                              <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-2.5 text-center">
-                                <div className="text-base font-black text-emerald-500">{userOrderStats.totalItems}</div>
-                                <div className="text-[10px] text-muted-foreground">Sản phẩm đã mua</div>
-                              </div>
-                              <div className="bg-rose-500/5 border border-rose-500/20 rounded-xl p-2.5 text-center">
-                                <div className="text-base font-black text-rose-500">{userOrderStats.cancelledOrders}</div>
-                                <div className="text-[10px] text-muted-foreground">Đơn đã hủy</div>
-                              </div>
-                            </div>
-                            <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-3 flex justify-between items-center mt-1">
-                              <span className="text-[11px] font-semibold text-muted-foreground">💰 Tổng chi tiêu (đơn hoàn thành):</span>
-                              <span className="text-sm font-black text-amber-500">{formatPrice(userOrderStats.totalSpent)}</span>
-                            </div>
-                            {Object.keys(userOrderStats.categoryBreakdown).length > 0 && (
-                              <div className="space-y-1.5 mt-1">
-                                <p className="text-[10px] font-bold text-muted-foreground">Phân loại sản phẩm đã mua:</p>
-                                {Object.entries(userOrderStats.categoryBreakdown)
-                                  .sort((a, b) => b[1] - a[1])
-                                  .map(([cat, qty]) => (
-                                    <div key={cat} className="flex justify-between items-center">
-                                      <span className="text-[11px] text-muted-foreground capitalize">{cat}</span>
-                                      <span className="text-[11px] font-bold text-foreground bg-muted px-1.5 py-0.5 rounded">{qty} sp</span>
+                                      {activeUserRoleDropdown === u.id && (
+                                        <div className="absolute top-[calc(100%+4px)] right-0 w-36 bg-card border border-border rounded-xl shadow-2xl p-1 z-35 animate-in fade-in slide-in-from-top-1 duration-150">
+                                          <div className="max-h-36 overflow-y-auto pr-1 custom-scroll space-y-0.5">
+                                            {[
+                                              { val: 'customer', label: 'Khách hàng' },
+                                              { val: 'staff', label: 'Nhân viên' },
+                                              { val: 'admin', label: 'Quản trị viên' }
+                                            ].map((opt) => (
+                                              <div
+                                                key={opt.val}
+                                                onClick={() => {
+                                                  setActiveUserRoleDropdown(null);
+                                                  if (opt.val !== role) {
+                                                    setPendingRoleChange({ userId: u.id, newRole: opt.val });
+                                                    setRoleConfirmOpen(true);
+                                                  }
+                                                }}
+                                                className={`px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${role === opt.val ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-muted/60 text-muted-foreground hover:text-foreground'
+                                                  }`}
+                                              >
+                                                {opt.label}
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
-                                  ))}
-                              </div>
-                            )}
-                            {/* NHẬN XÉT KHÁCH HÀNG */}
-                            <div className={`rounded-xl p-2.5 border text-[10px] font-semibold mt-1 ${
-                              userOrderStats.totalSpent >= 50000000
-                                ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400'
-                                : userOrderStats.totalSpent >= 10000000
-                                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
-                                : userOrderStats.completedOrders === 0
-                                ? 'bg-muted/50 border-border text-muted-foreground'
-                                : 'bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400'
-                            }`}>
-                              {userOrderStats.totalSpent >= 50000000
-                                ? '🏆 Khách VIP – Tri ân & ưu đãi đặc biệt'
-                                : userOrderStats.totalSpent >= 10000000
-                                ? '⭐ Khách gắn bó – Nên duy trì ưu đãi'
-                                : userOrderStats.completedOrders === 0
-                                ? '😴 Chưa mua hàng / Ít hoạt động – Cân nhắc món hời'
-                                : '🛒 Khách tiềm năng – Tiếp tục chăm sóc'}
-                            </div>
-                          </>
-                        ) : null}
-                      </div>
+                                  ) : (
+                                    <span className="text-[10px] text-muted-foreground/60 italic font-medium">Chỉ Admin được gán</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  <button
+                                    onClick={async () => {
+                                      setSelectedUserDetail(u);
+                                      setUserOrderStats({ totalOrders: 0, completedOrders: 0, cancelledOrders: 0, totalSpent: 0, totalItems: 0, categoryBreakdown: {}, isLoading: true });
+                                      try {
+                                        let ords: any[] = [];
+                                        const { data: { session } } = await supabase.auth.getSession();
+                                        const token = session?.access_token;
+                                        if (token) {
+                                          const res = await fetch(`/api/admin/orders?userId=${u.id}`, {
+                                            headers: { 'Authorization': `Bearer ${token}` }
+                                          });
+                                          if (res.ok) {
+                                            const json = await res.json();
+                                            ords = json.orders || [];
+                                          }
+                                        }
+                                        const completed = ords.filter((o: any) => o.status === 'delivered' || o.status === 'completed');
+                                        const cancelled = ords.filter((o: any) => o.status === 'cancelled');
+                                        const totalSpent = completed.reduce((sum: number, o: any) => sum + (o.total || 0), 0);
+                                        // Đếm số sản phẩm và phân loại
+                                        let totalItems = 0;
+                                        const categoryBreakdown: Record<string, number> = {};
+                                        completed.forEach((o: any) => {
+                                          const items = o.items || [];
+                                          items.forEach((item: any) => {
+                                            totalItems += (item.quantity || 1);
+                                            const cat = item.category || item.cat || 'Khác';
+                                            categoryBreakdown[cat] = (categoryBreakdown[cat] || 0) + (item.quantity || 1);
+                                          });
+                                        });
+                                        setUserOrderStats({ totalOrders: ords.length, completedOrders: completed.length, cancelledOrders: cancelled.length, totalSpent, totalItems, categoryBreakdown, isLoading: false });
+                                      } catch {
+                                        setUserOrderStats(prev => prev ? { ...prev, isLoading: false } : null);
+                                      }
+                                    }}
+                                    className="px-2.5 py-1 text-xs rounded-lg border border-border hover:bg-muted text-foreground font-bold cursor-pointer transition-colors"
+                                  >
+                                    Xem chi tiết
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          {users.length === 0 && (
+                            <tr>
+                              <td colSpan={selectedUserDetail ? 4 : 6} className="px-4 py-10 text-center text-muted-foreground text-sm">Không tải được thông tin thành viên.</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })()}
+
+                  {/* CỘT PHẢI: CHI TIẾT NGƯỜI DÙNG / NHÂN VIÊN (STICKY SIDEBAR) */}
+                  {selectedUserDetail && (
+                    <div className="w-full lg:w-[400px] xl:w-[440px] bg-card border border-border rounded-2xl shadow-2xl p-5 sticky top-6 max-h-[calc(100vh-160px)] overflow-y-auto custom-scroll animate-in slide-in-from-right duration-300 flex-shrink-0 space-y-4 text-xs">
+                      <div className="flex items-center justify-between pb-3 border-b border-border">
+                        <h2 className="text-sm font-bold text-foreground">Thông tin tài khoản</h2>
+                        <button onClick={() => setSelectedUserDetail(null)} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div className="flex flex-col items-center py-4 space-y-3 bg-muted/20 rounded-xl border border-border">
+                        {selectedUserDetail.user_metadata?.avatar_url ? (
+                          <img src={selectedUserDetail.user_metadata.avatar_url} alt="avatar" className="w-16 h-16 rounded-full border border-border object-cover" />
+                        ) : (
+                          <div className="w-16 h-16 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xl font-bold uppercase border border-border">
+                            {selectedUserDetail.email?.substring(0, 2)}
+                          </div>
+                        )}
+                        <div className="text-center">
+                          <h3 className="font-bold text-foreground text-sm">{selectedUserDetail.user_metadata?.full_name || 'Khách hàng'}</h3>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">{selectedUserDetail.email}</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2.5">
+                        <div className="flex justify-between items-center py-1.5 border-b border-border/40 font-bold">
+                          <span className="text-muted-foreground font-medium">Mã tài khoản (UID):</span>
+                          <span className="font-mono text-[10px] text-foreground">{selectedUserDetail.id}</span>
+                        </div>
+                        <div className="flex justify-between items-center py-1.5 border-b border-border/40 font-bold">
+                          <span className="text-muted-foreground font-medium">Vai trò hệ thống:</span>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border uppercase ${(selectedUserDetail.user_metadata?.role || 'customer') === 'admin'
+                              ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
+                              : (selectedUserDetail.user_metadata?.role || 'customer') === 'staff'
+                                ? 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20'
+                                : 'bg-muted text-muted-foreground border-border'
+                            }`}>
+                            {(selectedUserDetail.user_metadata?.role || 'customer') === 'admin' ? 'Quản trị' : (selectedUserDetail.user_metadata?.role || 'customer') === 'staff' ? 'Nhân viên' : 'Khách hàng'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center py-1.5 border-b border-border/40 font-bold">
+                          <span className="text-muted-foreground font-medium">Số điện thoại:</span>
+                          <span className="text-foreground">{selectedUserDetail.user_metadata?.phone || <span className="italic text-muted-foreground/50 text-[10px]">Chưa cung cấp</span>}</span>
+                        </div>
+                        <div className="flex justify-between items-center py-1.5 border-b border-border/40 font-bold">
+                          <span className="text-muted-foreground font-medium">Ngày sinh:</span>
+                          <span className="text-foreground">
+                            {selectedUserDetail.user_metadata?.birthday
+                              ? new Date(selectedUserDetail.user_metadata.birthday).toLocaleDateString('vi-VN')
+                              : <span className="italic text-muted-foreground/50 text-[10px]">Chưa cung cấp</span>}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center py-1.5 border-b border-border/40 font-bold">
+                          <span className="text-muted-foreground font-medium">Địa chỉ:</span>
+                          <span className="text-foreground text-right max-w-[60%]">{selectedUserDetail.user_metadata?.address || <span className="italic text-muted-foreground/50 text-[10px]">Chưa cung cấp</span>}</span>
+                        </div>
+                        <div className="flex justify-between items-center py-1.5 border-b border-border/40 font-bold">
+                          <span className="text-muted-foreground font-medium">Ngày đăng ký:</span>
+                          <span className="text-foreground">
+                            {selectedUserDetail.created_at ? new Date(selectedUserDetail.created_at).toLocaleDateString('vi-VN') + ' ' + new Date(selectedUserDetail.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : ''}
+                          </span>
+                        </div>
+
+                        {/* ── THỐNG KÊ MUA HÀNG ── */}
+                        <div className="space-y-2 border-t border-border pt-3">
+                          <p className="text-[11px] font-black text-foreground flex items-center gap-1.5 mb-2">
+                            📊 Thống kê mua hàng
+                          </p>
+                          {userOrderStats?.isLoading ? (
+                            <div className="flex items-center justify-center py-4">
+                              <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                            </div>
+                          ) : userOrderStats ? (
+                            <>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="bg-primary/5 border border-primary/20 rounded-xl p-2.5 text-center">
+                                  <div className="text-base font-black text-primary">{userOrderStats.completedOrders}</div>
+                                  <div className="text-[10px] text-muted-foreground">Đơn hoàn thành</div>
+                                </div>
+                                <div className="bg-muted/40 border border-border rounded-xl p-2.5 text-center">
+                                  <div className="text-base font-black text-foreground">{userOrderStats.totalOrders}</div>
+                                  <div className="text-[10px] text-muted-foreground">Tổng đơn hàng</div>
+                                </div>
+                                <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-2.5 text-center">
+                                  <div className="text-base font-black text-emerald-500">{userOrderStats.totalItems}</div>
+                                  <div className="text-[10px] text-muted-foreground">Sản phẩm đã mua</div>
+                                </div>
+                                <div className="bg-rose-500/5 border border-rose-500/20 rounded-xl p-2.5 text-center">
+                                  <div className="text-base font-black text-rose-500">{userOrderStats.cancelledOrders}</div>
+                                  <div className="text-[10px] text-muted-foreground">Đơn đã hủy</div>
+                                </div>
+                              </div>
+                              <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-3 flex justify-between items-center mt-1">
+                                <span className="text-[11px] font-semibold text-muted-foreground">💰 Tổng chi tiêu (đơn hoàn thành):</span>
+                                <span className="text-sm font-black text-amber-500">{formatPrice(userOrderStats.totalSpent)}</span>
+                              </div>
+                              {Object.keys(userOrderStats.categoryBreakdown).length > 0 && (
+                                <div className="space-y-1.5 mt-1">
+                                  <p className="text-[10px] font-bold text-muted-foreground">Phân loại sản phẩm đã mua:</p>
+                                  {Object.entries(userOrderStats.categoryBreakdown)
+                                    .sort((a, b) => b[1] - a[1])
+                                    .map(([cat, qty]) => (
+                                      <div key={cat} className="flex justify-between items-center">
+                                        <span className="text-[11px] text-muted-foreground capitalize">{cat}</span>
+                                        <span className="text-[11px] font-bold text-foreground bg-muted px-1.5 py-0.5 rounded">{qty} sp</span>
+                                      </div>
+                                    ))}
+                                </div>
+                              )}
+                              {/* NHẬN XÉT KHÁCH HÀNG */}
+                              <div className={`rounded-xl p-2.5 border text-[10px] font-semibold mt-1 ${userOrderStats.totalSpent >= 50000000
+                                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400'
+                                  : userOrderStats.totalSpent >= 10000000
+                                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                                    : userOrderStats.completedOrders === 0
+                                      ? 'bg-muted/50 border-border text-muted-foreground'
+                                      : 'bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400'
+                                }`}>
+                                {userOrderStats.totalSpent >= 50000000
+                                  ? '🏆 Khách VIP – Tri ân & ưu đãi đặc biệt'
+                                  : userOrderStats.totalSpent >= 10000000
+                                    ? '⭐ Khách gắn bó – Nên duy trì ưu đãi'
+                                    : userOrderStats.completedOrders === 0
+                                      ? '😴 Chưa mua hàng / Ít hoạt động – Cân nhắc món hời'
+                                      : '🛒 Khách tiềm năng – Tiếp tục chăm sóc'}
+                              </div>
+                            </>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* ========================================== */}
         {/* PANEL: HỖ TRỢ KHÁCH HÀNG (TICKETS) */}
@@ -4183,7 +4211,7 @@ export default function AdminPage() {
 
             {/* Grid 2 cột: Bảng danh sách & Khung Live Chat */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-              
+
               {/* Cột bên trái: Danh sách Tickets */}
               <div className="lg:col-span-2 rounded-2xl border border-border overflow-hidden overflow-x-auto bg-card/10">
                 <table className="w-full text-sm min-w-[500px]">
@@ -4198,8 +4226,8 @@ export default function AdminPage() {
                   </thead>
                   <tbody className="divide-y divide-border">
                     {filteredTickets.map((t) => (
-                      <tr 
-                        key={t.id} 
+                      <tr
+                        key={t.id}
                         onClick={() => setSelectedTicket(t)}
                         className={`hover:bg-muted/30 transition-colors cursor-pointer ${selectedTicket?.id === t.id ? 'bg-primary/5 border-l-4 border-l-primary' : ''}`}
                       >
@@ -4220,9 +4248,8 @@ export default function AdminPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase ${
-                            t.risk_level === 'high' ? 'bg-rose-500/10 text-rose-500' : 'bg-muted text-muted-foreground'
-                          }`}>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase ${t.risk_level === 'high' ? 'bg-rose-500/10 text-rose-500' : 'bg-muted text-muted-foreground'
+                            }`}>
                             {t.risk_level}
                           </span>
                         </td>
@@ -4289,22 +4316,21 @@ export default function AdminPage() {
                               <span className={`text-[8px] text-muted-foreground block ${msg.role === 'staff' ? 'text-right' : 'text-left'}`}>
                                 {msg.role === 'staff' ? 'Nhân viên (Bạn)' : 'Khách hàng'}
                               </span>
-                              
+
                               <div
-                                className={`rounded-xl p-2.5 leading-relaxed text-xs shadow-sm ${
-                                  msg.role === 'staff'
+                                className={`rounded-xl p-2.5 leading-relaxed text-xs shadow-sm ${msg.role === 'staff'
                                     ? 'bg-primary text-primary-foreground rounded-tr-none'
                                     : 'bg-card border border-border text-foreground rounded-tl-none'
-                                }`}
+                                  }`}
                               >
                                 {msg.message && <p className="whitespace-pre-wrap">{msg.message}</p>}
-                                
+
                                 {/* HIỂN THỊ ẢNH ĐÍNH KÈM NẾU CÓ */}
                                 {msg.image_url && (
                                   <div className="mt-1.5 max-w-[200px] overflow-hidden rounded-lg border border-border">
-                                    <img 
-                                      src={msg.image_url} 
-                                      alt="đính kèm" 
+                                    <img
+                                      src={msg.image_url}
+                                      alt="đính kèm"
                                       className="w-full h-auto object-cover cursor-pointer hover:scale-105 transition-all"
                                       onClick={() => window.open(msg.image_url, '_blank')}
                                     />
@@ -4408,7 +4434,7 @@ export default function AdminPage() {
               <AlertCircle className="w-6 h-6 flex-shrink-0" />
               <h3 className="text-sm font-bold text-foreground">Xác nhận thay đổi vai trò?</h3>
             </div>
-            
+
             <p className="text-xs text-muted-foreground leading-relaxed">
               Bạn có chắc chắn muốn thay đổi vai trò của tài khoản này thành{' '}
               <strong className="text-foreground">
@@ -4416,7 +4442,7 @@ export default function AdminPage() {
               </strong>{' '}
               không? Thao tác này sẽ trực tiếp thay đổi quyền hạn truy cập của họ.
             </p>
-            
+
             <div className="flex gap-2.5 pt-2">
               <button
                 type="button"
@@ -4481,11 +4507,10 @@ export default function AdminPage() {
                       key={st}
                       disabled={updatingOrderStatus}
                       onClick={() => handleUpdateOrderStatus(selectedOrder.id, st)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
-                        selectedOrder.status === st 
-                          ? 'bg-primary text-primary-foreground border-primary shadow-sm shadow-primary/20' 
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${selectedOrder.status === st
+                          ? 'bg-primary text-primary-foreground border-primary shadow-sm shadow-primary/20'
                           : 'bg-background hover:bg-muted text-muted-foreground border-border'
-                      }`}
+                        }`}
                     >
                       {st === 'pending' && 'Chờ xử lý'}
                       {st === 'processing' && 'Duyệt / Chuẩn bị'}

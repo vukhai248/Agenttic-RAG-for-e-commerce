@@ -269,10 +269,7 @@ export default function AccountPage() {
         {/* Logout & Home links (Desktop only) */}
         <div className="hidden md:flex flex-col gap-3 px-3">
           {/* Chỉ hiển thị link Admin nếu có quyền */}
-          {user && (user.user_metadata?.role === 'admin' ||
-            user.email === 'admin@gmail.com' ||
-            user.email === 'vugiakhai2004@gmail.com' ||
-            user.email?.toLowerCase().includes('admin')) && (
+          {user && (user.user_metadata?.role === 'admin' || user.user_metadata?.role === 'staff') && (
             <Link
               href="/admin"
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-primary border border-primary/20 hover:border-primary/45 bg-primary/5 hover:bg-primary/10 rounded-xl transition-all cursor-pointer"

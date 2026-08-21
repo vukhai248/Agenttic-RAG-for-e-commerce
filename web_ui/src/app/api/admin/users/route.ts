@@ -34,9 +34,9 @@ async function verifyAdminRequest(request: Request) {
     return { error: 'Token không hợp lệ hoặc phiên đăng nhập đã hết hạn!' };
   }
 
-  // Phân quyền admin dựa trên metadata hoặc email
+  // Phân quyền admin dựa trên metadata role động
   const userRole = user.user_metadata?.role;
-  const isUserAdmin = userRole === 'admin' || user.email === 'admin@gmail.com' || user.email === 'vugiakhai2004@gmail.com' || user.email?.toLowerCase().includes('admin');
+  const isUserAdmin = userRole === 'admin' || userRole === 'staff';
 
   if (!isUserAdmin) {
     return { error: 'Bạn không có quyền quản trị để thực hiện hành động này!' };

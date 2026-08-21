@@ -8,6 +8,7 @@ DROP TABLE IF EXISTS public.reviews CASCADE;
 DROP TABLE IF EXISTS public.orders CASCADE;
 DROP TABLE IF EXISTS public.products CASCADE;
 DROP TABLE IF EXISTS public.policies CASCADE;
+DROP TABLE IF EXISTS public.user_roles CASCADE;
 
 -- 1. Bảng products (Có specs kiểu JSONB để hỗ trợ thông số kỹ thuật động cực kỳ linh hoạt)
 CREATE TABLE public.products (
@@ -104,6 +105,13 @@ CREATE TABLE public.policies (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- 7. Bảng user_roles (Nguồn quyền server-side DUY NHẤT cho Admin/Staff)
+CREATE TABLE public.user_roles (
+    user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    role TEXT NOT NULL CHECK (role IN ('admin', 'staff', 'customer')),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
 -- Bật RLS
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reviews ENABLE ROW LEVEL SECURITY;
@@ -111,8 +119,23 @@ ALTER TABLE public.policies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.support_tickets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chat_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
 
 -- Cho phép đọc công khai (Read-only public access)
 CREATE POLICY "Cho phép đọc công khai sản phẩm" ON public.products FOR SELECT USING (true);
 CREATE POLICY "Cho phép đọc công khai đánh giá" ON public.reviews FOR SELECT USING (true);
 CREATE POLICY "Cho phép đọc công khai chính sách" ON public.policies FOR SELECT USING (true);
+
+-- user_roles: RLS deny-all với client - chỉ service_role phía server thao tác
+-- (không tạo bất kỳ policy nào cho bảng này)
+
+-- Luồng khách hàng dưới RLS (thao tác quản trị đi qua API server dùng service_role nên không cần policy)
+CREATE POLICY "orders_select_own" ON public.orders FOR SELECT TO authenticated USING (auth.uid() = user_id);
+CREATE POLICY "orders_insert_own" ON public.orders FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "tickets_select_own" ON public.support_tickets FOR SELECT TO authenticated USING (auth.uid() = customer_id);
+CREATE POLICY "tickets_insert_own" ON public.support_tickets FOR INSERT TO authenticated WITH CHECK (auth.uid() = customer_id);
+CREATE POLICY "tickets_update_own" ON public.support_tickets FOR UPDATE TO authenticated USING (auth.uid() = customer_id) WITH CHECK (auth.uid() = customer_id);
+
+-- Quản trị viên và nhân viên thao tác qua Next.js Server API Routes với SERVICE_ROLE_KEY
+-- đảm bảo an toàn tuyệt đối, phân quyền role động dựa trên user_metadata/user_roles.
+
