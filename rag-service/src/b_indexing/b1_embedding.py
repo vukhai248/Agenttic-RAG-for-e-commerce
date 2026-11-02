@@ -69,6 +69,9 @@ class EmbeddingService:
         for attempt in range(max_retries):
             try:
                 response = requests.post(self.url, headers=headers, json=payload, timeout=timeout)
+                if response.status_code == 401:
+                    print(f"Lỗi OpenRouter 401 (Invalid/Depleted API Key). Bỏ qua retry để kích hoạt fallback...")
+                    break
                 result = response.json()
                 if "data" in result:
                     return result["data"][0]["embedding"]
