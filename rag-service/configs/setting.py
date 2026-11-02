@@ -1,9 +1,13 @@
 import os
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from dotenv import load_dotenv
 
 # Thư mục gốc của RAG service (rag-service/) nơi chứa file .env
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Nạp file .env với override=True để luôn ưu tiên cấu hình trong dự án
+load_dotenv(os.path.join(BASE_DIR, ".env"), override=True)
 
 class Settings(BaseSettings):
     # 1. FastAPI Config
