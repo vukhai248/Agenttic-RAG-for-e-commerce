@@ -57,6 +57,23 @@ const SafeMarkdownLink = ({ href, children, ...props }: React.AnchorHTMLAttribut
     </a>
   );
 };
+// Helper sinh UUID v4 chuẩn RFC 4122 (H1)
+const generateUUID = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
+// Kiểm tra định dạng UUID v4 hợp lệ
+const isValidUUID = (str: string): boolean => {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+};
+
 const getStorageKeys = (isAdmin: boolean, uid: string) => {
   const userSuffix = uid ? `_${uid}` : '_guest';
   return {
@@ -177,8 +194,9 @@ export default function ChatWidget() {
     const { sessionKey, historyKey } = getStorageKeys(isCurrentAdmin, userId);
     
     let storedSession = localStorage.getItem(sessionKey);
-    if (!storedSession) {
-      storedSession = (isCurrentAdmin ? 'admin_sess_' : 'sess_') + Math.random().toString(36).substring(2, 15);
+    // Chuẩn hóa H1: Đảm bảo session_id luôn là UUID v4 RFC 4122 hợp lệ theo user
+    if (!storedSession || !isValidUUID(storedSession)) {
+      storedSession = generateUUID();
       localStorage.setItem(sessionKey, storedSession);
     }
     setSessionId(storedSession);
@@ -351,11 +369,21 @@ export default function ChatWidget() {
         }),
       });
 
-      if (!response.ok) {
-        throw new Error('Kết nối API bị lỗi');
-      }
+      const data = await response.json().catch(() => ({}));
 
-      const data = await response.json();
+      if (!response.ok) {
+        if (response.status === 503 || data?.error?.code === 'BACKEND_UNAVAILABLE') {
+          const botMessage: ChatMessage = {
+            id: 'bot_err_' + Date.now(),
+            role: 'agent',
+            message: data?.error?.message || '⚠️ Hệ thống AI tư vấn hiện đang tạm thời gián đoạn kết nối. Vui lòng thử lại sau ít phút hoặc gửi yêu cầu hỗ trợ tới nhân viên!',
+            created_at: new Date(),
+          };
+          setMessages((prev) => [...prev, botMessage]);
+          return;
+        }
+        throw new Error(data?.error?.message || `Lỗi máy chủ (${response.status})`);
+      }
 
       const botMessage: ChatMessage = {
         id: 'bot_' + Date.now(),

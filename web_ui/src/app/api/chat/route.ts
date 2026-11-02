@@ -22,6 +22,9 @@ export async function POST(request: Request) {
       ragServiceUrl = 'http://localhost:8080/chat';
     }
 
+    const allowMockChat = process.env.NEXT_PUBLIC_ALLOW_MOCK_CHAT === 'true';
+    let backendError: string | null = null;
+
     try {
       console.log(`[Next.js API Proxy] Đang chuyển tiếp tin nhắn tới AI Backend: ${ragServiceUrl}`);
       const apiResponse = await fetch(ragServiceUrl, {
@@ -44,13 +47,30 @@ export async function POST(request: Request) {
         console.log('[Next.js API Proxy] Nhận phản hồi thành công từ AI Backend');
         return NextResponse.json(data);
       } else {
-        console.error(`[Next.js API Proxy] AI Backend báo lỗi: ${apiResponse.status} ${apiResponse.statusText}`);
+        const errText = await apiResponse.text().catch(() => '');
+        backendError = `AI Backend trả mã lỗi ${apiResponse.status} ${apiResponse.statusText}`;
+        console.error(`[Next.js API Proxy] ${backendError}`, errText);
       }
-    } catch (fetchError) {
-      console.warn('[Next.js API Proxy] Không thể kết nối tới FastAPI Backend. Đang chuyển sang chế độ Mock Fallback.');
+    } catch (fetchError: any) {
+      backendError = fetchError?.message || 'Không thể kết nối tới dịch vụ AI Backend';
+      console.warn(`[Next.js API Proxy] Lỗi kết nối FastAPI: ${backendError}`);
     }
 
-    // 2. Chế độ Mock Fallback (chỉ chạy khi FastAPI chưa bật hoặc lỗi)
+    // Khi không bật cờ mock (mặc định tắt), trả 503 BACKEND_UNAVAILABLE theo Hợp đồng API §3
+    if (!allowMockChat) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'BACKEND_UNAVAILABLE',
+            message: 'Hệ thống AI tư vấn hiện đang tạm thời gián đoạn kết nối. Vui lòng thử lại sau ít phút hoặc tạo ticket để nhân viên hỗ trợ trực tiếp.',
+            details: process.env.NODE_ENV === 'development' ? backendError : undefined,
+          }
+        },
+        { status: 503 }
+      );
+    }
+
+    // 2. Chế độ Mock Fallback (chỉ chạy khi NEXT_PUBLIC_ALLOW_MOCK_CHAT=true)
     const msgLower = message.toLowerCase();
     let reply = '';
     let tool_used = '';
