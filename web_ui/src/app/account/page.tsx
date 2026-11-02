@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { ShoppingBag, User, LogOut, Clock, ShieldCheck, MapPin, Lock, Loader2, CheckCircle2, AlertCircle, Save, HelpCircle, LayoutDashboard } from 'lucide-react';
+import { ShoppingBag, User, LogOut, Clock, ShieldCheck, MapPin, Lock, Loader2, CheckCircle2, AlertCircle, Save, HelpCircle, LayoutDashboard, FileText, Edit3, X } from 'lucide-react';
 import Link from 'next/link';
 
 // Loại bỏ MOCK_ORDERS placeholder
@@ -38,6 +38,69 @@ export default function AccountPage() {
   const [supportNote, setSupportNote] = useState('');
   const [supportSaving, setSupportSaving] = useState(false);
   const [supportMsg, setSupportMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Sửa ghi chú đơn hàng pending
+  const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
+  const [editingNoteText, setEditingNoteText] = useState<string>('');
+  const [isSavingNote, setIsSavingNote] = useState<boolean>(false);
+  const [orderNoteMsg, setOrderNoteMsg] = useState<{ orderId: string; type: 'success' | 'error'; text: string } | null>(null);
+
+  const handleStartEditNote = (order: any) => {
+    setEditingOrderId(order.id);
+    setEditingNoteText(order.note || '');
+    setOrderNoteMsg(null);
+  };
+
+  const handleCancelEditNote = () => {
+    setEditingOrderId(null);
+    setEditingNoteText('');
+    setOrderNoteMsg(null);
+  };
+
+  const handleSaveOrderNote = async (orderId: string) => {
+    if (editingNoteText.length > 500) {
+      setOrderNoteMsg({ orderId, type: 'error', text: 'Ghi chú không được vượt quá 500 ký tự.' });
+      return;
+    }
+    setIsSavingNote(true);
+    setOrderNoteMsg(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+
+      const res = await fetch(`/api/orders/${orderId}/note`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ note: editingNoteText.trim() }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        if (res.status === 409 || data?.error?.code === 'NOT_EDITABLE') {
+          throw new Error(data?.error?.message || 'Không thể sửa ghi chú vì đơn hàng không còn ở trạng thái chờ duyệt (pending).');
+        }
+        throw new Error(data?.error?.message || `Lỗi ${res.status}: Không thể cập nhật ghi chú.`);
+      }
+
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === orderId
+            ? { ...o, note: data?.note !== undefined ? data.note : editingNoteText.trim() }
+            : o
+        )
+      );
+      setOrderNoteMsg({ orderId, type: 'success', text: 'Cập nhật ghi chú giao hàng thành công!' });
+      setEditingOrderId(null);
+    } catch (err: any) {
+      setOrderNoteMsg({ orderId, type: 'error', text: err.message || 'Lỗi khi lưu ghi chú.' });
+    } finally {
+      setIsSavingNote(false);
+    }
+  };
 
   const handleSendSupportTicket = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,12 +167,29 @@ export default function AccountPage() {
         } else {
           const isMockLogged = localStorage.getItem('mock_user_logged');
           if (isMockLogged === 'true') {
-            hydrateUser({
+            const mockUser = {
               id: 'mock_user_id_123456789',
               email: 'guest.developer@gmail.com',
               user_metadata: { full_name: 'Developer Guest', phone: '0900000000', address: '' },
-            });
-            setOrders([]);
+            };
+            hydrateUser(mockUser);
+
+            // Kiểm tra mock_orders trong localStorage trước, nếu không có thì query Supabase
+            const storedMockOrders = localStorage.getItem('mock_orders');
+            if (storedMockOrders) {
+              try {
+                setOrders(JSON.parse(storedMockOrders));
+              } catch {
+                setOrders([]);
+              }
+            } else {
+              const { data: orderData } = await supabase
+                .from('orders')
+                .select('*')
+                .eq('user_id', mockUser.id)
+                .order('created_at', { ascending: false });
+              setOrders(orderData || []);
+            }
           } else {
             router.push('/auth/login');
           }
@@ -373,6 +453,92 @@ export default function AccountPage() {
                       <MapPin className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
                       <span><strong className="text-foreground">Địa chỉ nhận hàng:</strong> {order.shipping_address}</span>
                     </div>
+
+                    {/* Ghi chú giao hàng & Sửa ghi chú khi đơn pending */}
+                    <div className="rounded-xl border border-border/60 bg-card/60 p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 font-semibold text-foreground text-xs">
+                          <FileText className="w-3.5 h-3.5 text-primary" />
+                          <span>Ghi chú giao hàng:</span>
+                        </div>
+                        {order.status === 'pending' && editingOrderId !== order.id && (
+                          <button
+                            type="button"
+                            onClick={() => handleStartEditNote(order)}
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline cursor-pointer"
+                          >
+                            <Edit3 className="w-3 h-3" />
+                            <span>Sửa ghi chú</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {orderNoteMsg && orderNoteMsg.orderId === order.id && (
+                        <div
+                          className={`p-2 rounded-lg border text-xs flex items-center gap-2 ${
+                            orderNoteMsg.type === 'success'
+                              ? 'border-success/30 bg-success/10 text-success'
+                              : 'border-destructive/30 bg-destructive/10 text-destructive'
+                          }`}
+                        >
+                          {orderNoteMsg.type === 'success' ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+                          ) : (
+                            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                          )}
+                          <span>{orderNoteMsg.text}</span>
+                        </div>
+                      )}
+
+                      {editingOrderId === order.id ? (
+                        <div className="space-y-2 pt-1">
+                          <textarea
+                            rows={2}
+                            maxLength={500}
+                            value={editingNoteText}
+                            onChange={(e) => setEditingNoteText(e.target.value)}
+                            placeholder="Nhập ghi chú giao hàng mới (ví dụ: gọi trước khi giao, giao giờ hành chính...)..."
+                            className="w-full p-2.5 rounded-lg border border-border bg-background text-foreground text-xs focus:outline-none focus:border-primary transition-colors resize-y"
+                          />
+                          <div className="flex justify-between items-center text-[10px] text-muted-foreground">
+                            <span>{editingNoteText.length}/500 ký tự</span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={handleCancelEditNote}
+                                disabled={isSavingNote}
+                                className="px-2.5 py-1 rounded-lg border border-border hover:bg-muted text-muted-foreground text-xs font-semibold cursor-pointer disabled:opacity-50"
+                              >
+                                Hủy
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSaveOrderNote(order.id)}
+                                disabled={isSavingNote}
+                                className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-primary text-primary-foreground text-xs font-bold hover:opacity-90 cursor-pointer disabled:opacity-50"
+                              >
+                                {isSavingNote ? (
+                                  <>
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                    <span>Đang lưu...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Save className="w-3 h-3" />
+                                    <span>Lưu</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground italic">
+                          {order.note ? `"${order.note}"` : '(Không có ghi chú giao hàng)'}
+                        </p>
+                      )}
+                    </div>
+
                     <div className="border-t border-border pt-3 flex justify-between items-center text-sm">
                       <span className="font-semibold text-muted-foreground">Tổng thanh toán:</span>
                       <span className="text-base font-black text-primary">{formatPrice(order.total)}</span>

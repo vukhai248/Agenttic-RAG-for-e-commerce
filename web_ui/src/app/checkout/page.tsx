@@ -104,6 +104,8 @@ export default function CheckoutPage() {
   
   const [user, setUser] = useState<any>(null);
   const [isLoadingUser, setIsLoadingUser] = useState(true);
+  const [isCartHydrated, setIsCartHydrated] = useState(false);
+  const [isOrderSubmitted, setIsOrderSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -200,12 +202,16 @@ export default function CheckoutPage() {
     checkUser();
   }, []);
 
-  // Nếu giỏ hàng trống thì quay lại trang giỏ (chạy trong effect, tránh push khi render)
   useEffect(() => {
-    if (items.length === 0) {
+    setIsCartHydrated(true);
+  }, []);
+
+  // Nếu giỏ hàng đã hydrate xong mà vẫn trống (và không phải đang đặt hàng) thì mới quay lại trang giỏ
+  useEffect(() => {
+    if (isCartHydrated && !isOrderSubmitted && items.length === 0) {
       router.push('/cart');
     }
-  }, [items.length, router]);
+  }, [isCartHydrated, isOrderSubmitted, items.length, router]);
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price);
@@ -235,9 +241,20 @@ export default function CheckoutPage() {
     setIsSubmitting(true);
 
     try {
-      const fullAddress = `${detailAddress.trim()}, ${ward}, ${district}, ${province}`;
-      const noteText = note.trim() ? ` (Ghi chú: ${note.trim()})` : '';
-      const shippingAddressText = `${fullName.trim()} - SĐT: ${phone.trim()} - ĐC: ${fullAddress}${noteText}`;
+      const addressLine = district ? `${detailAddress.trim()}, ${district}` : detailAddress.trim();
+      const payload = {
+        items: items.map((item) => ({
+          product_id: Number(item.id),
+          quantity: item.quantity,
+        })),
+        payment_method: paymentMethod, // 'stripe' | 'cod'
+        recipient_name: fullName.trim(),
+        recipient_phone: phone.trim(),
+        address_line: addressLine,
+        ward: ward.trim(),
+        province: province.trim(),
+        note: note.trim() || undefined,
+      };
 
       // Xử lý lưu địa chỉ nếu check lưu
       if (saveAddress) {
@@ -258,75 +275,33 @@ export default function CheckoutPage() {
         localStorage.setItem('saved_address_checkbox', 'false');
       }
 
-      const targetUserId = user?.id || '00000000-0000-0000-0000-000000000000'; // Fallback guest ID
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
 
-      if (paymentMethod === 'stripe') {
-        // Luồng 1: Thanh toán qua Stripe
-        const response = await fetch('/api/stripe', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            items,
-            user_id: targetUserId,
-            shipping_address: shippingAddressText,
-          }),
-        });
+      const response = await fetch('/api/orders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify(payload)
+      });
 
-        const data = await response.json();
+      const data = await response.json();
 
-        if (!response.ok || !data.url) {
-          throw new Error(data.error || 'Lỗi khi kết nối cổng thanh toán Stripe');
-        }
+      if (!response.ok) {
+        throw new Error(data.error?.message || data.message || 'Lỗi khi tạo đơn hàng');
+      }
 
-        // Chuyển hướng người dùng sang trang thanh toán Stripe (hoặc Mock Success URL)
-        // Nếu là Mock Success URL, ta chuyển trực tiếp ở frontend
-        if (data.isMock) {
-          // Lưu tạm giỏ hàng vào localStorage để trang Success khôi phục và ghi DB
-          localStorage.setItem('temp_checkout_items', JSON.stringify(items));
-          router.push(data.url);
-        } else {
-          // Stripe thật
-          localStorage.setItem('temp_checkout_items', JSON.stringify(items));
-          window.location.href = data.url;
-        }
+      // Đánh dấu đã submit đơn thành công để tránh effect redirect về /cart khi giỏ trống
+      setIsOrderSubmitted(true);
+      clearCart();
+
+      if (paymentMethod === 'stripe' && data.checkout_url) {
+        window.location.href = data.checkout_url;
       } else {
-        // Luồng 2: Thanh toán COD (giao hàng thu tiền)
-        // Lưu đơn hàng trực tiếp vào Supabase
-        const { error } = await supabase.from('orders').insert({
-          user_id: targetUserId,
-          status: 'pending',
-          items: items.map((item) => ({
-            id: item.id,
-            name: item.name,
-            price: item.price,
-            quantity: item.quantity,
-            image: item.image,
-          })),
-          total: getTotalPrice(),
-          shipping_address: shippingAddressText,
-        });
-
-        if (error) {
-          throw new Error('Lỗi ghi đơn hàng vào cơ sở dữ liệu: ' + error.message);
-        }
-
-        // Trừ tồn kho (stock) của sản phẩm
-        for (const item of items) {
-          try {
-            const { data: prod } = await supabase.from('products').select('stock').eq('id', item.id).single();
-            if (prod) {
-              await supabase.from('products').update({ stock: Math.max(0, prod.stock - item.quantity) }).eq('id', item.id);
-            }
-          } catch (stockErr) {
-            console.error(`Không thể trừ tồn kho của sản phẩm ${item.id}:`, stockErr);
-          }
-        }
-
-        // Xóa giỏ hàng và chuyển hướng về trang success
-        clearCart();
-        router.push(`/checkout-success?status=cod&user_id=${targetUserId}&address=${encodeURIComponent(shippingAddressText)}`);
+        // Chuyển hướng an toàn, URL tuyệt đối không chứa PII (tên, SĐT, địa chỉ)
+        router.push(`/checkout-success?order_id=${data.order_id}`);
       }
     } catch (err: any) {
       console.error('Lỗi thanh toán:', err);
@@ -335,6 +310,17 @@ export default function CheckoutPage() {
       setIsSubmitting(false);
     }
   };
+
+  if (!isCartHydrated) {
+    return (
+      <div className="container mx-auto px-4 py-16 flex items-center justify-center min-h-[50vh]">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 text-primary animate-spin" />
+          <span className="text-sm text-muted-foreground">Đang tải thông tin thanh toán...</span>
+        </div>
+      </div>
+    );
+  }
 
   if (items.length === 0) {
     return null;
