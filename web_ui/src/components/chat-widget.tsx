@@ -33,6 +33,30 @@ interface SupportTicket {
 }
 
 // Helper lấy key lưu trữ theo trạng thái đăng nhập và vai trò admin
+const SafeMarkdownLink = ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => {
+  const isInternal = href?.startsWith('/') || href?.startsWith('#');
+  if (isInternal) {
+    return (
+      <Link href={href || '#'} className="text-primary font-medium underline hover:opacity-80 transition-opacity" {...props}>
+        {children}
+      </Link>
+    );
+  }
+  // Liên kết ngoài: bảo vệ chống clickjacking / phishing lừa đảo
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer nofollow"
+      className="inline-flex items-center gap-1 text-destructive font-medium underline hover:opacity-80 transition-opacity"
+      title="Cảnh báo an toàn: Đây là liên kết dẫn ra ngoài website của cửa hàng"
+      {...props}
+    >
+      <span>{children}</span>
+      <span className="text-[9px] px-1 py-0.5 rounded bg-muted text-muted-foreground border border-border font-normal">ngoài</span>
+    </a>
+  );
+};
 const getStorageKeys = (isAdmin: boolean, uid: string) => {
   const userSuffix = uid ? `_${uid}` : '_guest';
   return {
@@ -312,7 +336,7 @@ export default function ChatWidget() {
     setIsLoading(true);
 
     try {
-      const serviceUrl = isAdminPage ? '/api/chat/admin' : (process.env.NEXT_PUBLIC_RAG_SERVICE_URL || '/api/chat');
+      const serviceUrl = isAdminPage ? '/api/chat/admin' : '/api/chat';
       
       const response = await fetch(serviceUrl, {
         method: 'POST',
@@ -625,7 +649,9 @@ export default function ChatWidget() {
                       }`}
                     >
                       <div className="prose prose-sm dark:prose-invert max-w-none text-xs sm:text-sm">
-                        <Markdown>{msg.message}</Markdown>
+                        <Markdown options={{ overrides: { a: { component: SafeMarkdownLink } } }}>
+                          {msg.message}
+                        </Markdown>
                       </div>
                     </div>
                   </div>

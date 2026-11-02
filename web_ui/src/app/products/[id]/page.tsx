@@ -793,7 +793,9 @@ export default function ProductDetailPage() {
           {/* Bảng specs kỹ thuật */}
           {displaySpecs.length > 0 ? (
             <div className="rounded-2xl border border-border bg-card/20 overflow-hidden">
-              {displaySpecs.map(([key, val]: [string, any], index: number) => (
+              {displaySpecs.map((entry: any[], index: number) => {
+                const [key, val] = entry;
+                return (
                 <div
                   key={key}
                   className={`grid grid-cols-3 p-4 text-xs sm:text-sm border-b border-border/50 last:border-0 ${
@@ -805,7 +807,7 @@ export default function ProductDetailPage() {
                     {Array.isArray(val) ? val.join(', ') : String(val)}
                   </span>
                 </div>
-              ))}
+              );})}
             </div>
           ) : (
             <p className="text-muted-foreground text-sm italic">Chưa có thông số kỹ thuật chi tiết.</p>
