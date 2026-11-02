@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from uuid import uuid4
 
 # Thêm thư mục gốc của rag-service vào sys.path để tránh lỗi import module configs
 sys.path.append(str(Path(__file__).resolve().parent.parent))
@@ -69,8 +70,9 @@ async def chat_endpoint(request: ChatRequest, authorization: Optional[str] = Hea
             user_id = verify_supabase_jwt(user_token)
 
         # Gọi Workflow 1 (LangGraph) với user_query, session_id, user_token
-        session_id = request.session_id or "default-session"
-        run_config = {"configurable": {"thread_id": session_id}}
+        session_id = request.session_id or str(uuid4())
+        thread_id = f"{user_id or 'anon'}:{session_id}"
+        run_config = {"configurable": {"thread_id": thread_id}}
         
         result = workflow_app.invoke(
             {

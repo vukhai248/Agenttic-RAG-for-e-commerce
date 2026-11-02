@@ -195,6 +195,7 @@ class MasterAgent:
 
                 return {
                     "content": text_content if text_content else None,
+                    "loop_exhausted": False,
                     "tool_context": tool_context,
                     "latency": total_elapsed,
                     "tokens": {
@@ -202,6 +203,19 @@ class MasterAgent:
                         "output": total_output_tokens,
                     }
                 }
+
+        # The model kept requesting tools through the entire turn budget.
+        # Return the same result shape as a normal answer, including metrics.
+        return {
+            "content": "Xin lỗi, yêu cầu quá phức tạp nên tôi chưa thể hoàn tất trong giới hạn xử lý. Vui lòng chia nhỏ yêu cầu hoặc liên hệ nhân viên hỗ trợ.",
+            "loop_exhausted": True,
+            "tool_context": tool_context,
+            "latency": time.time() - start_time,
+            "tokens": {
+                "input": total_input_tokens,
+                "output": total_output_tokens,
+            },
+        }
 
     # ==================================================================
     # HELPER: Chuẩn hóa tool args từ LLM (tách riêng để invoke() dễ đọc)

@@ -124,6 +124,7 @@ class AgentState(TypedDict):
     cited_sources: list[str]
     ticket_id: Optional[str]
     show_popup: bool
+    loop_exhausted: bool
 
     # 8. Thống kê
     input_tokens: Annotated[int, operator.add]
@@ -147,6 +148,7 @@ def receive_node(state: AgentState) -> dict:
     return {
         "user_id": user_id,
         "is_authenticated": is_authenticated,
+        "loop_exhausted": False,
         "user_query": query  
     }
 
@@ -301,6 +303,7 @@ def master_node(state: AgentState) -> dict:
     return {
         "final_answer": result["content"],
         "messages": [assistant_msg],
+        "loop_exhausted": result.get("loop_exhausted", False),
         "tool_calls_used": new_tool_records,
         "conversation_state": conversation_state,
         "input_tokens": result["tokens"]["input"],
