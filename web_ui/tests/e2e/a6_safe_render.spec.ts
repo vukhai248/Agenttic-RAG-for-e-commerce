@@ -142,7 +142,7 @@ test.describe('Gói A6: Render an toàn trong Chat Widget (H11 - Allowlist, Homo
     await page.waitForTimeout(1000);
 
     // 1. Script không được thực thi
-    const isXssExecuted = await page.evaluate(() => (window as any).__xss_success);
+    const isXssExecuted = await page.evaluate(() => (window as unknown as Record<string, boolean>).__xss_success);
     expect(isXssExecuted).toBeUndefined();
 
     // 2. Thẻ script không tồn tại dưới dạng DOM node
@@ -213,6 +213,60 @@ test.describe('Gói A6: Render an toàn trong Chat Widget (H11 - Allowlist, Homo
     await expect(flagBadge).toContainText('⚠️ Đang kiểm duyệt bảo vệ (#dec_flag_12345)');
 
     await page.screenshot({ path: 'tests/e2e/screenshots/a6/a6_guard_badge_flag.png' });
+  });
+
+  test('A6.6: Chặn triệt để các vector Bypass Allowlist (F1 - Protocol-relative, Backslash, Schemes nguy hiểm)', async ({ page }) => {
+    await page.goto('/');
+
+    const chatBtn = page.locator('button[title="Trò chuyện với trợ lý AI"]');
+    await chatBtn.click();
+
+    // Mock response chứa toàn bộ các vector tấn công bypass allowlist
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          reply: [
+            'Kiểm tra các vector bypass:',
+            '1. [ProtoRelative](//evil-shop.example/a)',
+            '2. [SlashBackslash](/\\evil-shop.example)',
+            '3. [Backslash](\\evil-shop.example)',
+            '4. [JsScheme](javascript:alert(1))',
+            '5. [DataScheme](data:text/html,malicious)',
+            '6. [UpperCaseHost](HTTPS://EVIL-SHOP.EXAMPLE)',
+            'Ảnh bypass: ![Ảnh ProtocolRelative](//attacker-tracker.com/pixel.png)'
+          ].join('\n\n'),
+          guard: { action: 'allow' }
+        })
+      });
+    });
+
+    const inputField = page.locator('input[placeholder*="Hỏi về sản phẩm"]');
+    await inputField.fill('Kiểm tra bypass vectors');
+    await inputField.press('Enter');
+
+    // Chờ tin nhắn hiển thị
+    await page.waitForTimeout(1000);
+
+    // 1. Xác minh không có thẻ <a> nào trỏ tới domain độc hại evil-shop.example
+    const evilLinks = page.locator('a[href*="evil-shop.example"]');
+    await expect(evilLinks).toHaveCount(0);
+
+    // 2. Không có thẻ <a> nào chứa javascript: hoặc data:
+    const jsLinks = page.locator('a[href^="javascript:"], a[href^="data:"]');
+    await expect(jsLinks).toHaveCount(0);
+
+    // 3. Ảnh protocol-relative ngoài allowlist phải bị ẩn (không render thẻ <img>)
+    const evilImg = page.locator('img[src*="attacker-tracker.com"]');
+    await expect(evilImg).toHaveCount(0);
+
+    // 4. Có text ẩn ảnh ngoài
+    const hiddenImgText = page.locator('text=[Ảnh ngoài đã bị ẩn: Ảnh ProtocolRelative]');
+    await expect(hiddenImgText).toBeVisible({ timeout: 10000 });
+
+    // Chụp ảnh bằng chứng CUA kiểm tra bypass vectors
+    await page.screenshot({ path: 'tests/e2e/screenshots/a6/a6_bypass_vectors_blocked.png' });
   });
 
 });

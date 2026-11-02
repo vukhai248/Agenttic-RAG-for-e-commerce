@@ -32,7 +32,7 @@ test.describe('Gói A3-UI: Customer Data Surface & Order Workflow', () => {
     });
 
     // 2. Mock API POST /api/orders theo Hợp đồng API §3
-    let orderRequestBody: any = null;
+    let orderRequestBody: Record<string, unknown> | null = null;
     await page.route('**/api/orders', async (route) => {
       if (route.request().method() === 'POST') {
         orderRequestBody = JSON.parse(route.request().postData() || '{}');
@@ -184,7 +184,7 @@ test.describe('Gói A3-UI: Customer Data Surface & Order Workflow', () => {
     await page.locator('button[aria-label="4 sao"]').click();
 
     // 6. Giả lập trường hợp CHƯA MUA: POST /api/reviews trả về 403 NOT_PURCHASED
-    let reviewPayload: any = null;
+    let reviewPayload: Record<string, unknown> | null = null;
     await page.route('**/api/reviews', async (route) => {
       reviewPayload = JSON.parse(route.request().postData() || '{}');
       await route.fulfill({
@@ -293,7 +293,7 @@ test.describe('Gói A3-UI: Customer Data Surface & Order Workflow', () => {
     await expect(noteTextarea).toBeVisible();
 
     // 4. Thử trường hợp thành công (PATCH 200)
-    let patchPayload: any = null;
+    let patchPayload: Record<string, unknown> | null = null;
     await page.route('**/api/orders/ord-pending-test-01/note', async (route) => {
       patchPayload = JSON.parse(route.request().postData() || '{}');
       await route.fulfill({

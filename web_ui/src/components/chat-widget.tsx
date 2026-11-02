@@ -68,7 +68,7 @@ const getLinkAllowlist = (): string[] => {
   return Array.from(new Set([...defaultAllowlist, ...envAllowlist].filter(Boolean)));
 };
 
-// Kiểm tra tính an toàn của URL (hỗ trợ kiểm tra Homoglyph Punycode)
+// Kiểm tra tính an toàn của URL (hỗ trợ kiểm tra Homoglyph Punycode và chặn triệt để protocol-relative bypass)
 const checkUrlSafety = (
   urlString: string
 ): { safe: boolean; isInternal: boolean; hostname: string; isHomoglyph: boolean } => {
@@ -77,19 +77,54 @@ const checkUrlSafety = (
   }
 
   const trimmed = urlString.trim();
+  const lower = trimmed.toLowerCase();
 
-  // 1. Link nội bộ website
-  if (trimmed.startsWith('/') || trimmed.startsWith('#')) {
+  // 1. Chặn ngay các scheme nguy hiểm, bypass backslash (thô hoặc url-encode %5c) và protocol-relative
+  if (
+    lower.startsWith('javascript:') ||
+    lower.startsWith('data:') ||
+    lower.startsWith('vbscript:') ||
+    trimmed.startsWith('//') ||
+    trimmed.includes('\\') ||
+    lower.includes('%5c') ||
+    lower.startsWith('//')
+  ) {
+    return { safe: false, isInternal: false, hostname: '', isHomoglyph: false };
+  }
+
+  // 2. Fragment link nội bộ thuần túy (#id)
+  if (trimmed.startsWith('#')) {
     return { safe: true, isInternal: true, hostname: '', isHomoglyph: false };
   }
 
-  // 2. Chỉ cho phép giao thức http: và https:
+  // 3. Parse bằng new URL với base origin của trang web hiện tại
   try {
-    const parsed = new URL(trimmed);
+    const baseOrigin = typeof window !== 'undefined' && window.location.origin
+      ? window.location.origin
+      : 'http://localhost:3000';
+
+    const parsed = new URL(trimmed, baseOrigin);
+
+    // Chỉ cho phép giao thức http: và https:
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       return { safe: false, isInternal: false, hostname: '', isHomoglyph: false };
     }
 
+    // 4. Kiểm tra Link nội bộ:
+    // Phải có origin trùng khớp với baseOrigin VÀ input gốc bắt đầu bằng đúng 1 dấu '/'
+    // Đồng thời pathname không được chứa ký tự backslash lẩn tránh
+    const isInternal =
+      parsed.origin === baseOrigin &&
+      trimmed.startsWith('/') &&
+      !trimmed.startsWith('//') &&
+      !trimmed.includes('\\') &&
+      !lower.includes('%5c');
+
+    if (isInternal) {
+      return { safe: true, isInternal: true, hostname: parsed.hostname.toLowerCase(), isHomoglyph: false };
+    }
+
+    // 5. Kiểm tra Link ngoài:
     // Trình duyệt tự động chuyển đổi Unicode IDN sang Punycode (VD: Cyrillic 'аmazon.com' -> 'xn--mazon-1qa.com')
     const hostname = parsed.hostname.toLowerCase();
     const isHomoglyph = hostname.startsWith('xn--') || hostname.includes('.xn--');
@@ -172,9 +207,9 @@ const SafeMarkdownImage = ({ src, alt, ...props }: React.ImgHTMLAttributes<HTMLI
   }
 
   const srcString = typeof src === 'string' ? src : '';
-  const { safe } = checkUrlSafety(srcString);
+  const { safe, isInternal } = checkUrlSafety(srcString);
 
-  if (safe) {
+  if (safe || isInternal) {
     return (
       <img
         src={src}

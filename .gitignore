@@ -60,6 +60,7 @@ pip-delete-this-directory.txt
 
 # Vector database local storage
 .chroma/
+database/chroma_db/
 *.db
 *.sqlite3
 
