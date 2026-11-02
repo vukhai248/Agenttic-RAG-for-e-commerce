@@ -18,6 +18,10 @@ next-env.d.ts
 
 # Testing and coverage
 coverage/
+playwright-report/
+test-results/
+web_ui/playwright-report/
+web_ui/test-results/
 
 # Misc system files
 .DS_Store
