@@ -101,6 +101,8 @@ export default function LoginPage() {
               <input
                 type="email"
                 required
+                autoComplete="off"
+                suppressHydrationWarning
                 placeholder="email@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -121,6 +123,8 @@ export default function LoginPage() {
               <input
                 type="password"
                 required
+                autoComplete="off"
+                suppressHydrationWarning
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
