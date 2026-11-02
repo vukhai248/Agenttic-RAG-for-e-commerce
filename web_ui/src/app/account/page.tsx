@@ -69,6 +69,14 @@ export default function AccountPage() {
     }
   };
 
+  const hydrateUser = (u: any) => {
+    setUser(u);
+    setFullName(u.user_metadata?.full_name || '');
+    setPhone(u.user_metadata?.phone || '');
+    setAddress(u.user_metadata?.address || '');
+    setBirthday(u.user_metadata?.birthday || '');
+  };
+
   useEffect(() => {
     const fetchUserDataAndOrders = async () => {
       setIsLoading(true);
@@ -116,14 +124,6 @@ export default function AccountPage() {
 
     fetchUserDataAndOrders();
   }, [router]);
-
-  const hydrateUser = (u: any) => {
-    setUser(u);
-    setFullName(u.user_metadata?.full_name || '');
-    setPhone(u.user_metadata?.phone || '');
-    setAddress(u.user_metadata?.address || '');
-    setBirthday(u.user_metadata?.birthday || '');
-  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();

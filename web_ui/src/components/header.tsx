@@ -234,6 +234,8 @@ export default function Header() {
           <form onSubmit={handleSearch} className="relative w-full">
             <input
               type="text"
+              autoComplete="off"
+              suppressHydrationWarning
               placeholder="Tìm kiếm sản phẩm, thương hiệu..."
               value={searchQuery}
               onFocus={() => setIsFocused(true)}
