@@ -64,9 +64,8 @@ pip-delete-this-directory.txt
 .idea/
 .project
 .settings/
-# Documentation
-docs/
-
-# IDE rules
+# IDE / Agent specific ignores
 .clinerules/
+.session-history/
+.design/
 
