@@ -42,11 +42,26 @@ class ChatResponse(BaseModel):
 
 @app.get("/health")
 def health_check():
+    chroma_ok = False
+    chroma_count = 0
+    try:
+        from src.b_indexing.b0_vector_db import ChromaVectorDatabase
+        db = ChromaVectorDatabase()
+        chroma_count = db.count_documents("products_collection")
+        chroma_ok = True
+    except Exception:
+        chroma_ok = False
+
+    supabase_ok = bool(settings.SUPABASE_URL and settings.SUPABASE_SERVICE_ROLE_KEY)
+    is_healthy = supabase_ok and chroma_ok
+
     return {
-        "status": "healthy", 
+        "status": "healthy" if is_healthy else "degraded", 
         "service": "rag-service",
         "debug_mode": settings.DEBUG,
-        "supabase_connected": bool(settings.SUPABASE_URL)
+        "supabase_connected": supabase_ok,
+        "chroma_connected": chroma_ok,
+        "chroma_products_count": chroma_count
     }
 
 @app.post("/chat", response_model=ChatResponse)
