@@ -97,7 +97,10 @@ test.describe('Gói A3-UI: Customer Data Surface & Order Workflow', () => {
     await page.locator('button:has-text("Xác nhận đặt hàng")').click();
 
     // 8. Chờ chuyển hướng tới /checkout-success
-    await page.waitForURL('**/checkout-success?order_id=ord-test-uuid-a3-001*');
+    // Khắc phục F6 (flake test do cold compilation): Khi chạy cả bộ test ngay sau `npm run build`,
+    // Next.js Turbopack dev server phải biên dịch on-demand route `/checkout-success` lần đầu tiên,
+    // trong khi nhiều workers chạy song song gây nghẽn CPU. Tăng timeout lên 15000ms để đảm bảo ổn định.
+    await page.waitForURL('**/checkout-success?order_id=ord-test-uuid-a3-001*', { timeout: 15000 });
 
     // 9. Xác minh URL KHÔNG chứa PII (không chứa SĐT, tên, địa chỉ)
     const currentUrl = page.url();
