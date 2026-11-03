@@ -1,6 +1,8 @@
 import re
 from typing import Optional
 import json
+import os
+from src.d_tools.tool_result import ToolResult, Segment
 from app.core.security import supabase_admin_client, get_user_supabase_client
 
 
@@ -38,7 +40,7 @@ def order_lookup(
     current_user_id: str = None, 
     user_token: Optional[str] = None, 
     order_id: Optional[str] = None
-) -> str:
+) -> ToolResult | str:
     """
     Tra cứu chi tiết đơn hàng cho người dùng đã xác thực hiện tại.
     Sử dụng client người dùng động (RLS) nếu user_token được cung cấp.
@@ -90,16 +92,37 @@ def order_lookup(
             else:
                 items_str = f"  - {str(items_raw)}"
                 
-            safe_shipping_address = _mask_pii_address(order.get('shipping_address', 'None'))
-            return (
+            legacy = os.getenv("LEGACY_PROMPT_DEFENSE", "on").lower() != "off"
+            segments = [Segment("order_note", str(order.get("id")), order.get("shipping_address") or "None")]
+            prefix = (
                 f"=== ORDER DETAILS ===\n"
                 f"- Order ID: {order.get('id')}\n"
                 f"- Order Date: {order.get('created_at')}\n"
                 f"- Status: {order.get('status', 'Unknown').upper()}\n"
-                f"- Shipping Address: {safe_shipping_address}\n"
+                f"- Shipping Address: "
+            )
+            suffix = (
+                f"\n"
                 f"- Total Amount: {order.get('total', 0):,.0f} VNĐ\n"
                 f"- Purchased Items:\n{items_str}"
             )
+            parts = [prefix, 0, suffix]
+            trusted = prefix + suffix
+            # A2 gives migrated legacy rows 'unpaid' without knowing their historical payment.
+            # Show new fields for structured orders, preserving the legacy baseline otherwise.
+            structured_fields = ("recipient_name", "recipient_phone", "address_line", "ward", "province", "note")
+            has_details = any(order.get(field) for field in structured_fields)
+            if order.get("payment_status") and (has_details or order["payment_status"] != "unpaid"):
+                payment = f"\n- Payment Status: {order['payment_status']}"
+                parts.append(payment)
+                trusted += payment
+            for field in structured_fields:
+                if order.get(field):
+                    label = f"\n- {field}: "
+                    parts.extend([label, len(segments)])
+                    trusted += label
+                    segments.append(Segment("order_note", str(order.get("id")), order[field]))
+            return ToolResult("order_lookup", trusted, segments, parts, _mask_pii_address if legacy else None)
             
         # ----------------------------------------------------
         # TRƯỜNG HỢP 2: Lấy danh sách tất cả các đơn hàng gần đây
@@ -109,7 +132,7 @@ def order_lookup(
             # và tự động giải quyết các câu hỏi như "Đơn hàng Samsung S25 của tôi đâu?"
             response = (
                 db_client.table("orders")
-                .select("id", "status", "total", "created_at", "items")
+                .select("id,status,total,created_at,items")
                 .eq("user_id", current_user_id)
                 .order("created_at", desc=True)
                 .limit(5)  # Lấy tối đa 5 đơn hàng gần đây nhất

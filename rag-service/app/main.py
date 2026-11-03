@@ -1,14 +1,19 @@
 import sys
+import asyncio
 from pathlib import Path
+from uuid import uuid4
 
 # Thêm thư mục gốc của rag-service vào sys.path để tránh lỗi import module configs
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from configs.setting import settings
+from src.guard_client import build_context, guard_output
+from src.chat_logging import write_chat_turn
+from src.health import service_health
 
 # Import compiled LangGraph Workflow 1
 from src.g_pipelines.workflow_1.workflow_1 import app as workflow_app
@@ -31,23 +36,25 @@ app.add_middleware(
 
 class ChatRequest(BaseModel):
     message: str
-    session_id: Optional[str] = None
+    session_id: Optional[str] = Field(default=None, max_length=100)
     user_token: Optional[str] = None
+
+class GuardResponse(BaseModel):
+    action: str = "allow"
+    decision_id: Optional[str] = None
+    flags: List[str] = Field(default_factory=list)
+
 
 class ChatResponse(BaseModel):
     reply: str
     tool_used: Optional[str] = None
     sources: List[str] = []
     session_id: str
+    guard: GuardResponse = Field(default_factory=GuardResponse)
 
 @app.get("/health")
 def health_check():
-    return {
-        "status": "healthy", 
-        "service": "rag-service",
-        "debug_mode": settings.DEBUG,
-        "supabase_connected": bool(settings.SUPABASE_URL)
-    }
+    return service_health()
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest, authorization: Optional[str] = Header(None)):
@@ -69,8 +76,9 @@ async def chat_endpoint(request: ChatRequest, authorization: Optional[str] = Hea
             user_id = verify_supabase_jwt(user_token)
 
         # Gọi Workflow 1 (LangGraph) với user_query, session_id, user_token
-        session_id = request.session_id or "default-session"
-        run_config = {"configurable": {"thread_id": session_id}}
+        session_id = request.session_id or str(uuid4())
+        thread_id = f"{user_id or 'anon'}:{session_id}"
+        run_config = {"configurable": {"thread_id": thread_id}}
         
         result = workflow_app.invoke(
             {
@@ -82,12 +90,22 @@ async def chat_endpoint(request: ChatRequest, authorization: Optional[str] = Hea
         )
 
         # Trích xuất kết quả từ Agent State
-        final_answer = result.get("final_answer") or "Xin lỗi, tôi không thể xử lý yêu cầu này."
+        final_answer = result.get("final_answer")
+        if not final_answer:
+            final_answer = guard_output("Xin lỗi, tôi không thể xử lý yêu cầu này.",
+                                        build_context(session_id=session_id, user_id=user_id))
         cited_sources = result.get("cited_sources") or []
         
         # Tổng hợp tool_used từ lịch sử tool calls
         tool_calls = result.get("tool_calls_used") or []
         tool_used = ", ".join([t.get("tool", "") for t in tool_calls if t.get("tool")]) or None
+
+        await asyncio.to_thread(write_chat_turn,
+            session_id=session_id, user_id=user_id, user_message=request.message,
+            agent_message=final_answer, tool_calls=result.get("turn_tool_calls") or [],
+            risk_level=result.get("risk_level") or "safe",
+            guard_decision_ids=result.get("guard_decision_ids") or [],
+        )
 
         return ChatResponse(
             reply=final_answer,

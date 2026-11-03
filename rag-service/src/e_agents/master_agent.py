@@ -6,6 +6,8 @@ from configs.setting import settings
 from configs.GetConfig import config
 from src.LLMService import LLMService
 from src.f_prompts import FULL_MASTER_PROMPT
+from src.d_tools.tool_result import ToolResult
+from src.guard_client import build_context, guard_context, guard_output
 
 
 class MasterAgent:
@@ -15,7 +17,7 @@ class MasterAgent:
 
         # Danh sách tool cần authentication - chỉ cần tên tool
         # Thêm tool mới: chỉ append vào list, KHÔNG sửa logic invoke()
-        self.AUTH_TOOLS = ["order_lookup", "cart_lookup", "wishlist_update"]
+        self.AUTH_TOOLS = ["order_lookup", "cart_lookup", "wishlist_update", "create_support_ticket"]
 
     def invoke(
         self,
@@ -23,7 +25,8 @@ class MasterAgent:
         available_tools: Dict[str, Any] = None,
         tools_schema: List[Dict[str, Any]] = None,
         auth_context: dict = None,
-        skill: str = None
+        skill: str = None,
+        guard_ctx: dict = None,
         ):
         """
         auth_context (dict, optional): Chứa thông tin xác thực để inject vào tools cần auth
@@ -32,6 +35,7 @@ class MasterAgent:
         skill (str, optional): Nội dung skill markdown nối thêm vào system prompt.
         """
 
+        guard_ctx = build_context(**(guard_ctx or {}))
         # Inject skill as an extra system message (right after the first system prompt)
         if skill:
             messages = list(messages)
@@ -167,6 +171,9 @@ class MasterAgent:
                     if func_name in available_tools:
                         real_function = available_tools[func_name]
                         result = real_function(**func_args)
+                        if isinstance(result, ToolResult):
+                            result.untrusted = [guard_context(segment, {**guard_ctx, "tool": func_name})
+                                                for segment in result.untrusted]
 
                         # Lưu lại args + output vào tool_context để truyền sang lượt sau
                         tool_context.append({
@@ -192,9 +199,12 @@ class MasterAgent:
                 continue
             else:
                 total_elapsed = time.time() - start_time
+                text_content = guard_output(text_content, guard_ctx)
+                agent_msg["content"] = text_content
 
                 return {
                     "content": text_content if text_content else None,
+                    "loop_exhausted": False,
                     "tool_context": tool_context,
                     "latency": total_elapsed,
                     "tokens": {
@@ -202,6 +212,19 @@ class MasterAgent:
                         "output": total_output_tokens,
                     }
                 }
+
+        # The model kept requesting tools through the entire turn budget.
+        # Return the same result shape as a normal answer, including metrics.
+        return {
+            "content": guard_output("Xin lỗi, yêu cầu quá phức tạp nên tôi chưa thể hoàn tất trong giới hạn xử lý. Vui lòng chia nhỏ yêu cầu hoặc liên hệ nhân viên hỗ trợ.", guard_ctx),
+            "loop_exhausted": True,
+            "tool_context": tool_context,
+            "latency": time.time() - start_time,
+            "tokens": {
+                "input": total_input_tokens,
+                "output": total_output_tokens,
+            },
+        }
 
     # ==================================================================
     # HELPER: Chuẩn hóa tool args từ LLM (tách riêng để invoke() dễ đọc)
@@ -343,5 +366,11 @@ class MasterAgent:
             if not isinstance(args, dict):
                 args = {}
             return {k: v for k, v in args.items() if k in {"order_id"}}
+
+        if name in {"product_reviews", "create_support_ticket"}:
+            if not isinstance(args, dict):
+                return {}
+            allowed = {"product_id", "product_name", "limit"} if name == "product_reviews" else {"category", "note", "order_id"}
+            return {k: v for k, v in args.items() if k in allowed}
 
         return args if isinstance(args, dict) else {}

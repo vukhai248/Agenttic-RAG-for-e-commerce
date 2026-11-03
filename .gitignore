@@ -18,6 +18,7 @@ next-env.d.ts
 
 # Testing and coverage
 coverage/
+bench_records/
 
 # Misc system files
 .DS_Store
@@ -33,6 +34,9 @@ yarn-error.log*
 
 
 # Environment files
+.env.bench
+*.env.bench
+.seed-bench.lock
 .env
 .env.local
 .env.development.local

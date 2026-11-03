@@ -1,6 +1,7 @@
 from configs.setting import settings
 from configs.GetConfig import config
 import uuid
+import os
 import operator
 from typing import TypedDict, Literal, Optional, Annotated
 from langgraph.graph import StateGraph, START, END
@@ -34,6 +35,9 @@ from src.f_prompts import (
 from app.core.security import verify_supabase_jwt
 
 from src.f_prompts.skills import load_skill, list_skills
+from src.d_tools.product_reviews import product_reviews, PRODUCT_REVIEWS_SCHEMA
+from src.d_tools.support_ticket import create_support_ticket, CREATE_SUPPORT_TICKET_SCHEMA
+from src.guard_client import build_context, guard_input, guard_output
 
 #=================================================
 
@@ -41,38 +45,48 @@ available_tools = {
     "product_search": product_search,
     "product_compare": product_compare,
     "policy_search": policy_search,
-    "order_lookup": order_lookup
+    "order_lookup": order_lookup,
+    "product_reviews": product_reviews,
+    "create_support_ticket": create_support_ticket,
 }
 
 tools_schema = [
     PRODUCT_SEARCH_SCHEMA,
     PRODUCT_COMPARE_SCHEMA,
     POLICY_SEARCH_SCHEMA,
-    ORDER_LOOKUP_SCHEMA
+    ORDER_LOOKUP_SCHEMA,
+    PRODUCT_REVIEWS_SCHEMA,
+    CREATE_SUPPORT_TICKET_SCHEMA,
 ]
 
 #=================================================
 
-def select_skill(query: str) -> str:
+def select_skill(query: str) -> tuple[str, str]:
     """Chọn skill markdown phù hợp với câu hỏi. Có thể thay bằng LLM-call nhẹ sau này."""
     q = (query or "").lower()
+    def selected(name):
+        return name, load_skill(name) or ""
+    if any(k in q for k in ["ticket", "tạo phiếu", "chuyển nhân viên"]):
+        return selected("account/support_ticket")
+    if any(k in q for k in ["đánh giá", "review", "mọi người nói gì", "có tốt không"]):
+        return selected("product/reviews")
     # Order / account
     if any(k in q for k in ["đơn hàng", "order", "tra đơn", "mua hàng"]):
-        return load_skill("account/order_lookup") or ""
+        return selected("account/order_lookup")
     # Policy
     if any(k in q for k in ["chính sách", "đổi trả", "bảo hành", "trả góp", "giao hàng", "vận chuyển"]):
-        return load_skill("policy/policy_search") or ""
+        return selected("policy/policy_search")
     # Compare (named products)
     if any(k in q for k in ["so sánh", "nên chọn", "hay hơn"]):
-        return load_skill("product/compare") or load_skill("product/single_spec") or ""
+        return selected("product/compare" if load_skill("product/compare") else "product/single_spec")
     # Ambiguous / vague
     if any(k in q for k in ["tư vấn", "gợi ý", "nên mua", "máy nào", "con nào", "tầm giá"]):
-        return load_skill("product/ambiguous") or ""
+        return selected("product/ambiguous")
     # Single specific spec / price / stock
     if any(k in q for k in ["bao nhiêu", "giá", "tồn kho", "chip", "ram", "pin", "màn hình", "camera", "bộ nhớ"]):
-        return load_skill("product/single_spec") or ""
+        return selected("product/single_spec")
     # Default: ambiguous / general guidance
-    return load_skill("product/ambiguous") or ""
+    return selected("product/ambiguous")
 
 
 
@@ -108,11 +122,14 @@ class AgentState(TypedDict):
 
     # 4. Router (Định tuyến)
     intent: str                              # Kết quả phân loại: 'product', 'policy', 'account', 'support'
+    skill_name: str
     selected_agent: Optional[str]            # Quyết định Nút xử lý tiếp theo
 
     # 5. Retrieval & Tools
     retrieved_context: list[RetrievedChunk]
     tool_calls_used: Annotated[list[dict], operator.add]  # ⚡ Reducer cộng dồn lịch sử tool calls (mỗi dict = {tool, args, response?})
+    turn_tool_calls: list[dict]
+    guard_decision_ids: list[str]
     iteration_count: int                     # Đếm số lần lặp chống infinite loop
 
     # 6. Hội thoại
@@ -124,6 +141,7 @@ class AgentState(TypedDict):
     cited_sources: list[str]
     ticket_id: Optional[str]
     show_popup: bool
+    loop_exhausted: bool
 
     # 8. Thống kê
     input_tokens: Annotated[int, operator.add]
@@ -147,21 +165,30 @@ def receive_node(state: AgentState) -> dict:
     return {
         "user_id": user_id,
         "is_authenticated": is_authenticated,
+        "loop_exhausted": False,
+        "skill_name": "",
+        "intent": "",
+        "turn_tool_calls": [],
+        "guard_decision_ids": [],
         "user_query": query  
     }
 
 #=================================================
 
 def guardrail_node(state: AgentState) -> dict:
-    query = state["user_query"]
+    ctx = build_context(session_id=state.get("session_id"), user_id=state.get("user_id"))
+    query = guard_input(state["user_query"], ctx)
     
-    result = guardrail_call.invoke(query)
+    result = ({"risk_level": "safe", "latency": 0, "tokens": {"input": 0, "output": 0}}
+              if os.getenv("LEGACY_LLM_GUARDRAIL", "on").lower() == "off"
+              else guardrail_call.invoke(query))
     risk_level = result["risk_level"]
     
     # Chỉ lưu tin nhắn khi KHÔNG phải attack
     if risk_level != "attack":
         return {
             "risk_level": risk_level,
+            "user_query": query,
             "show_popup": False,
             "messages": [
                 {
@@ -179,6 +206,7 @@ def guardrail_node(state: AgentState) -> dict:
         return {
             "risk_level": risk_level,
             "show_popup": True,
+            "user_query": query,
             "latency": result["latency"],
             "input_tokens": result["tokens"]["input"],
             "output_tokens": result["tokens"]["output"],
@@ -200,7 +228,7 @@ def rejection_node(state: AgentState) -> dict:
     result = rejection_call.invoke(query)
 
     return {
-        "final_answer": result["content"],
+        "final_answer": guard_output(result["content"], build_context(session_id=state.get("session_id"), user_id=state.get("user_id"))),
         "show_popup": True,
         "input_tokens": result["tokens"]["input"],
         "output_tokens": result["tokens"]["output"],
@@ -269,16 +297,17 @@ def master_node(state: AgentState) -> dict:
     }
 
     user_query = state.get("user_query", "")
-    skill_text = select_skill(user_query)
+    skill_name, skill_text = select_skill(user_query)
     if skill_text:
-        print(f"🧩 Injected skill for query: {user_query[:60]}...")
+        print(f"🧩 Injected skill: {skill_name}")
 
     result = master_agent.invoke(
         messages=full_messages,
         available_tools=available_tools,
         tools_schema=tools_schema,
         auth_context=auth_context,
-        skill=skill_text
+        skill=skill_text,
+        guard_ctx={"session_id": state.get("session_id"), "user_id": state.get("user_id"), "intent": skill_name},
     )
 
     new_tool_records = result.get("tool_context") or []
@@ -300,8 +329,12 @@ def master_node(state: AgentState) -> dict:
 
     return {
         "final_answer": result["content"],
+        "skill_name": skill_name,
+        "intent": skill_name,
         "messages": [assistant_msg],
+        "loop_exhausted": result.get("loop_exhausted", False),
         "tool_calls_used": new_tool_records,
+        "turn_tool_calls": new_tool_records,
         "conversation_state": conversation_state,
         "input_tokens": result["tokens"]["input"],
         "output_tokens": result["tokens"]["output"],
