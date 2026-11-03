@@ -249,8 +249,8 @@ test.describe('Gói A6: Render an toàn trong Chat Widget (H11 - Allowlist, Homo
     // Chờ tin nhắn hiển thị
     await page.waitForTimeout(1000);
 
-    // 1. Xác minh không có thẻ <a> nào trỏ tới domain độc hại evil-shop.example
-    const evilLinks = page.locator('a[href*="evil-shop.example"]');
+    // 1. Xác minh không có thẻ <a> nào trỏ tới domain độc hại evil-shop.example (dùng cờ i để không phân biệt hoa thường, bắt cả HTTPS://EVIL-SHOP.EXAMPLE)
+    const evilLinks = page.locator('a[href*="evil-shop.example" i]');
     await expect(evilLinks).toHaveCount(0);
 
     // 2. Không có thẻ <a> nào chứa javascript: hoặc data:

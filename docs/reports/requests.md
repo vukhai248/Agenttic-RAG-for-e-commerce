@@ -48,3 +48,16 @@ Tài liệu ghi nhận các thay đổi dùng chung hoặc các module xuyên su
   - `401`: `{"error": {"code": "UNAUTHENTICATED", "message": "..."}}`
   - `403`: `{"error": {"code": "FORBIDDEN", "message": "..."}}`
   - `500`: `{"error": {"code": "INTERNAL_ERROR", "message": "..."}}`
+
+---
+
+## 3. Cấu hình Tài khoản Benchmark `bench_customer_a` cho E2E Test (F5)
+- **Người gửi**: Antigravity (Tầng 3 — Frontend & QA)
+- **Người nhận**: Codex (Tầng 2 — Backend & Tool)
+- **Nội dung**: Để bộ test E2E Playwright (`tests/e2e/a5_ui.spec.ts: A5.4`) có thể thực hiện kiểm thử tự động hành vi chống leo quyền (Privilege Escalation Prevention) trên API server thật mà không mock:
+  - Khi Codex tạo tài khoản mẫu benchmark theo đặc tả `A-hoan-thien-web.md` (dòng 107), vui lòng cấu hình hai biến môi trường vào file `.env.bench`:
+    ```env
+    BENCH_CUSTOMER_EMAIL=customer_test@example.com
+    BENCH_CUSTOMER_PASSWORD=your_secure_password
+    ```
+  - Test A5.4 đã sẵn sàng cơ chế tự động đọc hai biến này từ `.env.bench` để đăng nhập thật, giả lập người dùng tự sửa `user_metadata.role='admin'`, gọi thật 4 API Admin GET và 1 API Admin PUT để xác minh server từ chối 403 `FORBIDDEN` qua `requireRole`. Khi chưa có `.env.bench`, test tự động `skip` với thông báo rõ ràng.

@@ -1,4 +1,7 @@
 import { test, expect, Page, Route } from '@playwright/test';
+import fs from 'fs';
+import path from 'path';
+import { createClient } from '@supabase/supabase-js';
 
 test.describe('Gói A5-UI: Dữ liệu thật Admin & Nhật ký hội thoại Chat Logs (H9, F2, F3)', () => {
 
@@ -220,71 +223,112 @@ test.describe('Gói A5-UI: Dữ liệu thật Admin & Nhật ký hội thoại C
     await page.screenshot({ path: 'tests/e2e/screenshots/a5/a5_chat_logs_session_detail.png' });
   });
 
-  test('A5.4: Chặn đứng tấn công leo quyền (F2 Privilege Escalation) khi user tự sửa user_metadata.role="admin"', async ({ page }) => {
-    // 1. Giả lập một kẻ tấn công tự sửa user_metadata.role = 'admin' qua client Supabase
-    // nhưng trong bảng user_roles thực tế, user này là customer hoặc không tồn tại
-    await page.addInitScript(() => {
-      const spoofedSession = {
-        access_token: 'spoofed_customer_token_123',
-        token_type: 'bearer',
-        expires_in: 3600,
-        expires_at: Math.floor(Date.now() / 1000) + 3600,
-        refresh_token: 'mock_refresh',
-        user: {
-          id: 'hacker_customer_id',
-          aud: 'authenticated',
-          role: 'authenticated',
-          email: 'attacker@evil.com',
-          user_metadata: {
-            role: 'admin', // Tự gán trái phép ở metadata!
-            full_name: 'Attacker Impersonator'
+  test('A5.4: Chặn đứng tấn công leo quyền (F2 Privilege Escalation) khi user tự sửa user_metadata.role="admin"', async ({ request }) => {
+    // F5: Kiểm tra xác thực quyền server-side thật qua requireRole (KHÔNG mock server)
+    // 1. Đọc thông tin tài khoản benchmark từ .env.bench hoặc environment variables
+    const getBenchCredentials = () => {
+      const envBenchPaths = [
+        path.resolve(process.cwd(), '.env.bench'),
+        path.resolve(process.cwd(), '../.env.bench')
+      ];
+      let email = process.env.BENCH_CUSTOMER_EMAIL;
+      let password = process.env.BENCH_CUSTOMER_PASSWORD;
+
+      for (const envPath of envBenchPaths) {
+        if (fs.existsSync(envPath)) {
+          const content = fs.readFileSync(envPath, 'utf-8');
+          for (const line of content.split('\n')) {
+            const trimmed = line.trim();
+            if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
+              const [k, ...v] = trimmed.split('=');
+              const key = k.trim();
+              const val = v.join('=').trim().replace(/^["']|["']$/g, '');
+              if (key === 'BENCH_CUSTOMER_EMAIL' && !email) email = val;
+              if (key === 'BENCH_CUSTOMER_PASSWORD' && !password) password = val;
+            }
           }
         }
-      };
-      const sessionStr = JSON.stringify(spoofedSession);
-      localStorage.setItem('sb-riycenndsrlpivzbcnmf-auth-token', sessionStr);
-    });
+      }
+      return { email, password };
+    };
 
-    // 2. Mock các route admin khi nhận request từ spoofed token
-    // Kiểm tra API trả về đúng 403 FORBIDDEN
-    const adminRoutes = [
-      '/api/admin/chat-logs',
-      '/api/admin/orders',
-      '/api/admin/tickets',
-      '/api/admin/users'
-    ];
-
-    for (const routePath of adminRoutes) {
-      await page.route(`**${routePath}*`, async (route) => {
-        // Giả lập server requireRole phát hiện role trong user_roles != admin -> 403
-        await route.fulfill({
-          status: 403,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            error: {
-              code: 'FORBIDDEN',
-              message: 'Quyền truy cập bị từ chối: yêu cầu vai trò [admin, staff]'
-            }
-          })
-        });
-      });
+    const { email, password } = getBenchCredentials();
+    if (!email || !password) {
+      test.skip(true, 'Bỏ qua test vì chưa cấu hình BENCH_CUSTOMER_EMAIL / BENCH_CUSTOMER_PASSWORD trong .env.bench (thuộc tài khoản backend của Codex)');
+      return;
     }
 
-    // 3. Truy cập trang /admin với phiên giả mạo
-    await page.goto('/admin');
-    await page.waitForTimeout(500);
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+    if (!supabaseUrl || !supabaseAnonKey) {
+      test.skip(true, 'Thiếu cấu hình NEXT_PUBLIC_SUPABASE_URL hoặc NEXT_PUBLIC_SUPABASE_ANON_KEY');
+      return;
+    }
 
-    // Verify: Khi client fetch các API admin với token này, request bị từ chối 403 FORBIDDEN
-    const fetchStatus = await page.evaluate(async () => {
-      const res = await fetch('/api/admin/chat-logs', {
-        headers: { 'Authorization': 'Bearer spoofed_customer_token_123' }
-      });
-      const json = await res.json();
-      return { status: res.status, code: json?.error?.code };
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: { persistSession: false, autoRefreshToken: false }
     });
 
-    expect(fetchStatus.status).toBe(403);
-    expect(fetchStatus.code).toBe('FORBIDDEN');
+    // 2. Đăng nhập bằng tài khoản customer thật
+    const { data: authData, error: loginError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (loginError || !authData.session) {
+      test.skip(true, `Không thể đăng nhập bằng tài khoản bench_customer: ${loginError?.message}`);
+      return;
+    }
+
+    const accessToken = authData.session.access_token;
+    const userId = authData.user.id;
+
+    try {
+      // 3. Giả lập kẻ tấn công gọi Supabase client tự sửa user_metadata: { role: 'admin' }
+      const { error: updateMetaError } = await supabase.auth.updateUser({
+        data: { role: 'admin' }
+      });
+      expect(updateMetaError).toBeNull();
+
+      // 4. Gọi route thật cả 4 API Admin bằng Playwright request fixture
+      // Máy chủ phải tra cứu bảng public.user_roles và từ chối 403 FORBIDDEN
+      const adminRoutes = [
+        '/api/admin/chat-logs',
+        '/api/admin/orders',
+        '/api/admin/tickets',
+        '/api/admin/users'
+      ];
+
+      for (const routePath of adminRoutes) {
+        const res = await request.get(routePath, {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`
+          }
+        });
+        expect(res.status()).toBe(403);
+        const body = await res.json();
+        expect(body.error?.code).toBe('FORBIDDEN');
+      }
+
+      // 5. Thử gọi PUT /api/admin/users để tự nâng quyền
+      const putRes = await request.put('/api/admin/users', {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        data: {
+          userId,
+          role: 'admin'
+        }
+      });
+      expect(putRes.status()).toBe(403);
+      const putBody = await putRes.json();
+      expect(putBody.error?.code).toBe('FORBIDDEN');
+    } finally {
+      // 6. Dọn dẹp metadata về role ban đầu
+      await supabase.auth.updateUser({
+        data: { role: null }
+      });
+    }
   });
 
 });
