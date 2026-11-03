@@ -71,3 +71,10 @@ Chi tiết: `FOX-Guardrails/docs/plans/prompts/antigravity-phanA.md` (mục "Ngh
 - `feat/a-backend` → `main` (`d111eda`), rồi `feat/a-frontend` → `main` (`262458e`). 4 xung đột: `.gitignore` (gộp), `requests.md` (giữ cả hai), `rag-service/app/main.py` và `web_ui/src/lib/server/auth.ts` (bản backend).
 - Claude chạy trên `main`: pytest 93 passed; Node/PGlite 77/77; `npm run build` qua; `tsc` 0; Playwright 29 passed / 1 skipped (A5.4 chờ seed).
 - Việc tiếp của chủ đồ án: sao lưu Supabase → chạy 5 migration theo thứ tự → seed bằng fixture mẫu → Anti chạy Đợt 3 (QA toàn web).
+
+## Lần 10 — 03/11/2026 · Preflight migration (Codex) + migration 0 (Claude)
+
+- Codex preflight: backup `D:/backups/supabase/20261103-213431-pre-migration` (Claude kiểm lại: SHA-256 4 file khớp manifest). Supabase thật thiếu `chat_logs`, `user_roles`, `support_tickets` → migration 2 sẽ hỏng. Đúng.
+- Claude thêm `2026-11_base_tables.sql` (migration 0): tạo 3 bảng theo `setup.sql`, không DROP. Siết quyền so với `setup.sql`: khách chỉ INSERT ticket `open`/`low`/`created_by ∈ {customer, agent}` gắn đơn của chính mình, chỉ UPDATE cột `note`; `user_roles`, `chat_logs` chỉ service_role.
+- Claude chạy chuỗi 0 → 5 trên bản khôi phục (container pgvector:pg17, giả lập quyền mặc định Supabase): **6/6 migration OK + 21/21 kiểm quyền OK**, migration 0 chạy lại lần 2 không lỗi.
+- Chưa chạy gì trên Supabase thật.
