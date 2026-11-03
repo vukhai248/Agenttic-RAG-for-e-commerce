@@ -69,6 +69,12 @@ copy .env.example .env
 | `GEMINI_API_KEY` | Có | Google Gemini API Key để chạy mô hình ngôn ngữ cho Master Agent. |
 | `GROQ_API_KEY` | Tùy chọn | Groq API Key dự phòng khi chuyển đổi LLM provider. |
 | `VECTOR_DB_DIR` | Có | Đường dẫn tương đối hoặc tuyệt đối tới ChromaDB (mặc định: `../database/chroma_db`). |
+| `LEGACY_LLM_GUARDRAIL` | Tùy chọn | Cơ chế guardrail LLM cũ (giá trị: `on` / `off`, mặc định: `on`). |
+| `LEGACY_PROMPT_DEFENSE` | Tùy chọn | Bộ lọc phòng vệ prompt injection cũ (giá trị: `on` / `off`, mặc định: `on`). |
+| `FOX_GUARD_MODE` | Tùy chọn | Chế độ bảo vệ FOX-Guardrails (giá trị: `off` / `baseline` / `guard`, mặc định: `off`). |
+| `FOX_GUARD_ARM` | Tùy chọn | Tên cụm kiểm nghiệm FOX-Guardrails phục vụ A/B testing đối chuẩn. |
+| `BENCH_RECORD` | Tùy chọn | Bật/tắt ghi dữ liệu đánh giá benchmark vào cơ sở dữ liệu (`true` / `false`). |
+| `BENCH_TEMPERATURE` | Tùy chọn | Nhiệt độ lấy mẫu (sampling temperature) cho LLM khi chạy benchmark (ví dụ: `0.0`). |
 
 ### 3.2 Frontend (`web_ui/.env.local`)
 Sao chép mẫu cấu hình từ `web_ui/.env.example` sang `web_ui/.env.local`:
@@ -82,13 +88,29 @@ copy .env.example .env.local
 
 | Tên biến | Bắt buộc | Mô tả |
 | :--- | :--- | :--- |
+| `APP_URL` | Có | URL gốc của website frontend (mặc định: `http://localhost:3000`). |
 | `NEXT_PUBLIC_SUPABASE_URL` | Có | URL Supabase project. |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Có | Public Key của Supabase dùng trên giao diện web. |
-| `SUPABASE_SERVICE_ROLE_KEY` | Có | Service Role Key dùng trong các API route phía server. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Có | Service Role Key dùng trong các API route phân quyền phía server. |
 | `NEXT_PUBLIC_RAG_SERVICE_URL` | Có | URL trỏ tới FastAPI backend (mặc định: `http://localhost:8080/chat`). |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Có | Public Key Stripe Test Mode (`pk_test_...`). |
-| `STRIPE_SECRET_KEY` | Có | Secret Key Stripe Test Mode (`sk_test_...`). |
+| `STRIPE_SECRET_KEY` | Có | Secret Key Stripe Test Mode (chỉ sử dụng khóa bắt đầu bằng `sk_test_...`). |
+| `STRIPE_WEBHOOK_SECRET` | Có | Signing secret của Stripe Webhook (bắt đầu bằng `whsec_...`). |
 | `NEXT_PUBLIC_ALLOW_MOCK_CHAT` | Tùy chọn | Mặc định `false`. Nếu bật `true`, khi backend sập thì frontend trả lời giả lập. |
+| `NEXT_PUBLIC_ALLOW_MOCK_ADMIN` | Tùy chọn | Mặc định `false`. Chỉ dùng dữ liệu thật, không đổ số liệu giả trong admin. |
+| `NEXT_PUBLIC_SAFE_RENDER` | Tùy chọn | Mặc định `true`. Bật chế độ render an toàn, chặn link ngoài và ẩn ảnh lạ. |
+
+#### Chuyển tiếp Stripe Webhook khi chạy Local
+Để nhận sự kiện webhook thanh toán Stripe (`payment_intent.succeeded`) trên môi trường phát triển local, sử dụng Stripe CLI:
+```powershell
+# 1. Đăng nhập Stripe CLI
+stripe login
+
+# 2. Lắng nghe và chuyển tiếp webhook về endpoint Next.js
+stripe listen --forward-to localhost:3000/api/stripe/webhook
+```
+> [!TIP]
+> Terminal sẽ in ra dòng: `Your webhook signing secret is whsec_...`. Sao chép mã secret này vào biến `STRIPE_WEBHOOK_SECRET` trong file `web_ui/.env.local`.
 
 > [!CAUTION]
 > Tuyệt đối **không commit các file `.env` hoặc `.env.local`** lên repository Git để tránh lộ thông tin bảo mật và secret key.
@@ -158,13 +180,15 @@ npm.cmd run build
 
 ## 5. 🗄️ Quản lý Cơ sở dữ liệu & ChromaDB
 
+### 5.1 Quy trình thực thi Migration an toàn
 > [!CAUTION]
 > **CẢNH BÁO NGUY HIỂM VỀ DỮ LIỆU**:
-> Tuyệt đối **KHÔNG CHẠY LẠI file `database/setup.sql`** trên cơ sở dữ liệu Supabase đang hoạt động.
-> File này chứa các lệnh `DROP TABLE ... CASCADE` sẽ xóa vĩnh viễn toàn bộ dữ liệu bảng sản phẩm, đơn hàng và tài khoản!
-> Mọi cập nhật cấu trúc bảng mới chỉ được thực hiện thông qua các file migration tăng dần trong thư mục `database/migrations/`.
+> 1. Tuyệt đối **KHÔNG BAO GIỜ CHẠY LẠI file `database/setup.sql`** trên cơ sở dữ liệu Supabase đang hoạt động. File này chứa các lệnh `DROP TABLE ... CASCADE` sẽ xóa vĩnh viễn toàn bộ dữ liệu sản phẩm, đơn hàng và tài khoản!
+> 2. File migration mới: `database/migrations/2026-11_payment_and_address.sql` **do chủ đồ án chạy** trực tiếp trên Supabase SQL Editor.
+> 3. **Thời điểm thực thi**: **CHỈ CHẠY SAU KHI ĐÃ MERGE FRONTEND** vào nhánh chính. Lý do: Migration này sẽ thu hồi quyền `INSERT` trực tiếp vào bảng `orders` từ phía client (`REVOKE INSERT ON orders FROM authenticated, anon`) và chuyển toàn bộ việc tạo đơn/trừ kho sang hàm RPC bảo mật phía server. Nhánh frontend (`feat/a-frontend`) đã được hoàn thiện để gọi API server, nên chỉ khi code frontend đã merge thì hệ thống mới hoạt động trơn tru.
+> 4. **Sao lưu trước khi chạy**: Thực hiện xuất backup dữ liệu bảng `orders` hiện tại trước khi bấm chạy migration.
 
-### 5.1 Dữ liệu Vector ChromaDB
+### 5.2 Dữ liệu Vector ChromaDB
 - ChromaDB đã được nạp sẵn dữ liệu vector của hơn 1.300 sản phẩm và bộ quy tắc chính sách tại thư mục: `database/chroma_db/`.
 - Nếu cần nạp lại từ đầu từ nguồn dữ liệu thô:
   ```powershell
