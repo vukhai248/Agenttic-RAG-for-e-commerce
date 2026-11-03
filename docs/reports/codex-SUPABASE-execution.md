@@ -55,6 +55,8 @@ A5.4 dùng tài khoản benchmark thật, kiểm API từ chối khách tự gá
 
 ## 4. Còn mở
 
+> Cập nhật sau: blocker Stripe **local** bên dưới đã được giải quyết sau khi chủ tài khoản đăng nhập/cấp quyền. Listener nhận đủ ba event và expired end-to-end đạt; xem codex-STRIPE-local.md. Endpoint HTTPS trên Dashboard vẫn chưa tạo vì website đang chạy localhost. Các gạch đầu dòng tiếp theo ghi nhận trạng thái ban đầu của lượt migration/seed.
+
 - Stripe: khóa STRIPE_SECRET_KEY local có tiền tố test nhưng GET /v1/webhook_endpoints trả401. Không in khóa hoặc body lỗi, không dùng live key.
 - Chrome MCP mở được https://dashboard.stripe.com/test/webhooks nhưng chuyển tới đăng nhập. Cần chủ tài khoản đăng nhập đúng Stripe test; chưa thay đổi bất kỳ webhook nào.
 - Chưa thêm checkout.session.expired, chưa xác minh signing secret hoặc delivery webhook thật. Nếu key local không hợp lệ cần cập nhật bằng key test đúng trước khi thử thanh toán thật.

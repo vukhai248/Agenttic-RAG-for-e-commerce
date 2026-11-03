@@ -101,16 +101,18 @@ copy .env.example .env.local
 | `NEXT_PUBLIC_SAFE_RENDER` | Tùy chọn | Mặc định `true`. Bật chế độ render an toàn, chặn link ngoài và ẩn ảnh lạ. |
 
 #### Chuyển tiếp Stripe Webhook khi chạy Local
-Để nhận sự kiện webhook thanh toán Stripe (`checkout.session.completed` và `checkout.session.async_payment_succeeded`) trên môi trường phát triển local, sử dụng Stripe CLI:
+Để nhận các sự kiện `checkout.session.completed`, `checkout.session.async_payment_succeeded` và `checkout.session.expired` trên môi trường phát triển local, sử dụng Stripe CLI. Đây là listener chuyển tiếp về máy, không phải endpoint HTTPS đã đăng ký trên Dashboard:
 ```powershell
 # 1. Đăng nhập Stripe CLI
-stripe login
+npx.cmd --yes @stripe/cli@1.55.6 login
 
 # 2. Lắng nghe và chuyển tiếp webhook về endpoint Next.js
-stripe listen --forward-to localhost:3000/api/stripe/webhook
+npx.cmd --yes @stripe/cli@1.55.6 listen --events checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.expired --events-from '@self' --forward-to http://127.0.0.1:3000/api/stripe/webhook
 ```
 > [!TIP]
 > Terminal sẽ in ra dòng: `Your webhook signing secret is whsec_...`. Sao chép mã secret này vào biến `STRIPE_WEBHOOK_SECRET` trong file `web_ui/.env.local`.
+
+Listener và Next.js phải cùng đang chạy để nhận webhook. `STRIPE_SECRET_KEY` trong `.env.local` phải là khóa `sk_test_...` hợp lệ thuộc cùng sandbox; đăng nhập CLI không tự cập nhật khóa cho ứng dụng. Khi triển khai lên host công khai, đăng ký endpoint HTTPS `/api/stripe/webhook` trên đúng Stripe sandbox và dùng signing secret riêng của endpoint đó.
 
 > [!CAUTION]
 > Tuyệt đối **không commit các file `.env` hoặc `.env.local`** lên repository Git để tránh lộ thông tin bảo mật và secret key.
