@@ -14,7 +14,7 @@ Ngày: 03/11/2026. Nhánh `feat/a-backend`.
 ## A7 — Bench credentials (ghi nhớ F10 của Opus)
 
 - Backend đã tự ignore `.env.bench` và `*.env.bench`, có kiểm chứng `git check-ignore -v --no-index`. Chưa tạo tài khoản hoặc ghi mật khẩu ở A2.
-- Khi đến A7, Codex tạo `.env.bench` và xuất `BENCH_CUSTOMER_EMAIL` / `BENCH_CUSTOMER_PASSWORD` cho **bench_customer_a**, theo yêu cầu Anti. Kiểm tra ignore tại đúng đường dẫn trước khi ghi; không in mật khẩu, không commit file này.
+- Khi đến A7, Codex tạo `.env.bench` tại **gốc repo** và xuất `BENCH_CUSTOMER_EMAIL` / `BENCH_CUSTOMER_PASSWORD` cho **bench_customer_a**, theo đính chính mới của Claude. Playwright đọc cả `web_ui/.env.bench` và `../.env.bench`. Kiểm tra ignore tại đúng đường dẫn trước khi ghi; không in mật khẩu, không commit file này. `bench_admin` cần role=admin trong public.user_roles, không dùng user_metadata.
 - File ignore trên nhánh frontend không tự có tác dụng trên worktree backend. Sau khi ghép nhánh vẫn phải kiểm tra ignore ở nơi chạy seed và nơi Playwright đọc cấu hình.
 - A5.4 frontend chỉ được chốt khi chạy thật bằng tài khoản bench; chưa coi test skip là đạt kiểm tra quyền.
 
@@ -30,3 +30,12 @@ Ngày: 03/11/2026. Nhánh `feat/a-backend`.
 - `BENCH_TEMPERATURE=<số hữu hạn 0..2>` ghi đè nhiệt độ; bỏ biến để giữ config. BENCH_RECORD không đổi output, ghi lỗi thì chặn lần gửi không được ghi.
 - Skill mới được ghi tại CHANGELOG-bench.md. Chưa có guard logic Phần B, chưa có migration/tài khoản seed A7 ở checkpoint này.
 - Khi nghiệm thu sau ghép nhánh: hỏi “Mọi người đánh giá iPhone 16 thế nào?” để đọc review, “Tạo ticket báo đơn giao chậm” khi đã đăng nhập để tạo ticket. Với nhiều biến thể sản phẩm, cần resolve product_id trước; ticket chỉ gắn đơn thuộc chủ.
+
+## A5-backend — Nhật ký thật và bàn giao B
+
+- `/chat` ghi 2 message (user/agent) mỗi lượt bằng service_role, giữ session_id, user_id đã xác minh; risk safe/needs_ticket/attack map low/medium/high. Tool_used chỉ của lượt hiện tại; không lưu JWT/tool args/raw state.
+- Migration `2026-11_chat_logs_guard.sql` chỉ là file để review. Chủ đồ án chạy sau duyệt; thêm guard_decision_ids/default [], index phiên/thời gian và khóa quyền client. Không chạy setup.sql. Cần apply trước nghiệm thu log thật.
+- B/B9 cần triển khai thêm `guard_client.guard_log(text, ctx) -> LogText(message, decision_ids)`: message phải che PII không hoàn nguyên; ctx có session_id/user_id/mode/arm/role. Không dùng Decision.text nếu chỉ giả danh hóa hoặc đã restore. Mode off trả text gốc; mode bật thiếu masking thì writer từ chối ghi, không raw fallback.
+- B có thể trả danh sách decision IDs của cả lượt qua AgentState.guard_decision_ids; writer gộp với IDs do guard_log trả. Trường này và turn_tool_calls reset mỗi lượt. Các hook input/context/output hiện giữ hợp đồng A4; A5 không tự triển khai detector hoặc thay policy B.
+- Lỗi log không làm chat/tool đã hoàn tất thành lỗi/retry, chỉ phát mã cảnh báo cố định để vận hành; chưa có queue khôi phục. Ba lượt chat có 6 dòng message thật khi DB/migration sẵn sàng.
+- Admin route chuẩn vẫn object `{chat_logs,total,limit,offset}` theo Claude C2. Dữ liệu client session_id cần UUID riêng theo user theo A1; nếu caller tự gửi trùng chuỗi giữa hai user, admin hiện nhóm theo session_id có thể trộn nhóm (khách không đọc được log). Khi cần chống nhóm trùng tuyệt đối, Anti bổ sung user_id vào grouping/filter; không sửa chéo UI tại gói này.

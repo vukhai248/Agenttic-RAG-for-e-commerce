@@ -128,6 +128,8 @@ class AgentState(TypedDict):
     # 5. Retrieval & Tools
     retrieved_context: list[RetrievedChunk]
     tool_calls_used: Annotated[list[dict], operator.add]  # ⚡ Reducer cộng dồn lịch sử tool calls (mỗi dict = {tool, args, response?})
+    turn_tool_calls: list[dict]
+    guard_decision_ids: list[str]
     iteration_count: int                     # Đếm số lần lặp chống infinite loop
 
     # 6. Hội thoại
@@ -166,6 +168,8 @@ def receive_node(state: AgentState) -> dict:
         "loop_exhausted": False,
         "skill_name": "",
         "intent": "",
+        "turn_tool_calls": [],
+        "guard_decision_ids": [],
         "user_query": query  
     }
 
@@ -330,6 +334,7 @@ def master_node(state: AgentState) -> dict:
         "messages": [assistant_msg],
         "loop_exhausted": result.get("loop_exhausted", False),
         "tool_calls_used": new_tool_records,
+        "turn_tool_calls": new_tool_records,
         "conversation_state": conversation_state,
         "input_tokens": result["tokens"]["input"],
         "output_tokens": result["tokens"]["output"],

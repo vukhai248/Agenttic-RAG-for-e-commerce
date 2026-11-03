@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 from configs.setting import settings
 from src.guard_client import build_context, guard_output
+from src.chat_logging import write_chat_turn
 
 # Import compiled LangGraph Workflow 1
 from src.g_pipelines.workflow_1.workflow_1 import app as workflow_app
@@ -33,7 +34,7 @@ app.add_middleware(
 
 class ChatRequest(BaseModel):
     message: str
-    session_id: Optional[str] = None
+    session_id: Optional[str] = Field(default=None, max_length=100)
     user_token: Optional[str] = None
 
 class GuardResponse(BaseModel):
@@ -101,6 +102,13 @@ async def chat_endpoint(request: ChatRequest, authorization: Optional[str] = Hea
         # Tổng hợp tool_used từ lịch sử tool calls
         tool_calls = result.get("tool_calls_used") or []
         tool_used = ", ".join([t.get("tool", "") for t in tool_calls if t.get("tool")]) or None
+
+        write_chat_turn(
+            session_id=session_id, user_id=user_id, user_message=request.message,
+            agent_message=final_answer, tool_calls=result.get("turn_tool_calls") or [],
+            risk_level=result.get("risk_level") or "safe",
+            guard_decision_ids=result.get("guard_decision_ids") or [],
+        )
 
         return ChatResponse(
             reply=final_answer,

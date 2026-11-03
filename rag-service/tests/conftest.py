@@ -48,6 +48,12 @@ def backend():
 @pytest.fixture
 def client(backend, monkeypatch):
     workflow = backend.workflow
+    original_table = backend.security.supabase_admin_client.table
+    def offline_logs(name):
+        if name == "chat_logs":
+            return SimpleNamespace(insert=lambda rows: SimpleNamespace(execute=lambda: SimpleNamespace(data=[])))
+        return original_table(name)
+    monkeypatch.setattr(backend.security.supabase_admin_client, "table", offline_logs)
     monkeypatch.setattr(backend.main, "workflow_app", workflow.builder.compile(checkpointer=MemorySaver()))
     users = {
         "token-a": "11111111-1111-4111-8111-111111111111",
