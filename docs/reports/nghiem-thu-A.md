@@ -60,3 +60,8 @@ Chi tiết: `FOX-Guardrails/docs/plans/prompts/antigravity-phanA.md` (mục "Ngh
 - Anti H3, I3: **Đạt**. I1, I2, I4: **Chưa đạt** → gói J1–J4 (bỏ header `x-mock-rag-url` vì là lỗ SSRF; panel trợ lý admin không gửi token; I4 vẫn gộp log ẩn danh; cập nhật tài liệu theo K4 và migration 5).
 - Merge thử: 4 xung đột (`.gitignore`, `requests.md`, `rag-service/app/main.py`, `web_ui/src/lib/server/auth.ts` → giữ bản backend cho 2 file code).
 - Chưa merge, chưa chạy migration. Merge sau khi J đạt.
+
+## Lần 8 — 03/11/2026 · Anti `cf94cac`
+
+- Anti J1–J4: **Đạt**. Claude chạy lại: tsc 0, eslint 0 lỗi, Playwright 29 passed / 1 skipped (A5.4 chờ seed).
+- Phần code của Phần A đã xong ở cả hai nhánh. Còn: merge (chờ chủ đồ án đồng ý) → sao lưu + chạy 5 migration + seed → Đợt 3 QA toàn web → sửa lỗi QA → nghiệm thu cuối.
