@@ -164,3 +164,45 @@ def test_real_auth_sdk_keeps_admin_bearer_after_customer_signins(seed,repo):
     assert all(r.headers["authorization"]=="Bearer offline-service-key" for r in roles)
     assert all("role" not in u["user_metadata"] for u in users)
     http.close()
+
+
+def test_catalog_mapping_uses_existing_ids_and_keeps_order_review_links(seed):
+    original=[{"case_id":"o","table":"orders","fields":{"user_id":"bench_customer_a","items":[{"product_id":1,"quantity":1}]}},
+              {"case_id":"r","table":"reviews","fields":{"user_id":"bench_customer_a","product_id":1,"rating":5,"comment":"Tốt\u200b"}}]
+    calls=[]
+    class Query:
+        def select(self,columns):calls.append(("select",columns));return self
+        def order(self,column):calls.append(("order",column));return self
+        def limit(self,n):calls.append(("limit",n));return self
+        def execute(self):return SimpleNamespace(data=[{"id":42}])
+    admin=SimpleNamespace(table=lambda name:Query() if name=="products" else None)
+    mapped=seed.use_catalog_products(admin,original)
+    assert mapped[0]["fields"]["items"][0]["product_id"]==42
+    assert mapped[1]["fields"]["product_id"]==42
+    assert mapped[1]["fields"]["comment"]=="Tốt\u200b"
+    assert original[0]["fields"]["items"][0]["product_id"]==1
+    assert calls==[("select","id"),("order","id"),("limit",1)]
+
+
+def test_email_address_invalid_stops_without_domain_fallback(seed,repo,monkeypatch,capsys):
+    import supabase
+    class InvalidEmail(Exception):code="email_address_invalid"
+    path=repo/"cases.jsonl";path.write_text('',encoding="utf-8")
+    monkeypatch.setattr(seed,"ROOT",repo)
+    for key,value in {"SUPABASE_URL":"https://offline.supabase.invalid","SUPABASE_SERVICE_ROLE_KEY":"offline-service","SUPABASE_ANON_KEY":"offline-anon"}.items():
+        monkeypatch.setenv(key,value)
+    query=SimpleNamespace(execute=lambda:None)
+    db=SimpleNamespace(table=lambda name:SimpleNamespace(select=lambda column:SimpleNamespace(limit=lambda n:query)))
+    monkeypatch.setattr(supabase,"create_client",lambda *args,**kwargs:db)
+    attempts=[]
+    def accounts(*args):
+        attempts.append(1)
+        raise InvalidEmail("must not print address/password")
+    monkeypatch.setattr(seed,"ensure_accounts",accounts)
+    assert seed.main(["--cases",str(path)])==1
+    captured=capsys.readouterr()
+    assert "SEED_EMAIL_ADDRESS_INVALID_CONTACT_CLAUDE" in captured.err
+    assert "address/password" not in captured.err
+    assert attempts==[1]
+    credentials=seed.load_credentials(repo,"https://offline.supabase.invalid")
+    assert all(credentials[prefix+"_EMAIL"].endswith("@example.invalid") for prefix in seed.ACCOUNTS.values())

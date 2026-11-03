@@ -1,5 +1,6 @@
 """Seed synthetic benchmark data after owner-approved migrations. Never prints secrets."""
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -83,6 +84,32 @@ def resolve_cases(cases, namespace, users):
     return resolved
 
 
+def use_catalog_products(admin, cases):
+    """Explicit smoke-fixture remapping; preserve relationships, never modify the catalog."""
+    placeholders = set()
+    for case in cases:
+        if case["table"] == "orders":
+            placeholders.update(item["product_id"] for item in case["fields"]["items"])
+        else:
+            placeholders.add(case["fields"]["product_id"])
+    mapped = copy.deepcopy(cases)
+    if not placeholders:
+        return mapped
+    rows = admin.table("products").select("id").order("id").limit(len(placeholders)).execute().data or []
+    ids = [row.get("id") for row in rows]
+    if (len(ids) != len(placeholders) or any(type(value) is not int or value < 1 for value in ids)
+            or len(set(ids)) != len(ids)):
+        raise SeedError("BENCH_NOT_ENOUGH_CATALOG_PRODUCTS")
+    mapping = dict(zip(sorted(placeholders), sorted(ids)))
+    for case in mapped:
+        if case["table"] == "orders":
+            for item in case["fields"]["items"]:
+                item["product_id"] = mapping[item["product_id"]]
+        else:
+            case["fields"]["product_id"] = mapping[case["fields"]["product_id"]]
+    return mapped
+
+
 def require_ignored(root, name):
     if subprocess.run(["git", "check-ignore", "-q", "--", name], cwd=root, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
         raise SeedError("CREDENTIAL_PATH_NOT_IGNORED")
@@ -163,6 +190,7 @@ def main(argv=None):
     parser.add_argument("--cases", type=Path, required=True)
     parser.add_argument("--reset", action="store_true", help="Atomically replace only mapped rows in this namespace")
     parser.add_argument("--dry-run", action="store_true", help="Validate JSONL only: no credentials, accounts or DB changes")
+    parser.add_argument("--products-from-db", action="store_true", help="Map smoke-fixture placeholder product IDs to existing catalog IDs")
     args = parser.parse_args(argv)
     lock_fd = None
     lock_path = ROOT / ".seed-bench.lock"
@@ -189,6 +217,8 @@ def main(argv=None):
         admin = create_client(url, service_key, options=ClientOptions(persist_session=False, auto_refresh_token=False))
         # Fail before writing passwords or creating users when migration is not installed.
         admin.table("bench_cases").select("case_id").limit(1).execute()
+        if args.products_from_db:
+            cases = use_catalog_products(admin, cases)
         credentials = load_credentials(ROOT, url)
         login = create_client(url, anon_key, options=ClientOptions(persist_session=False, auto_refresh_token=False))
         users = ensure_accounts(admin, login, credentials)
@@ -198,8 +228,11 @@ def main(argv=None):
         return 0
     except SeedError as error:
         print(str(error), file=sys.stderr)
-    except Exception:
-        print("SEED_FAILED_CHECK_MIGRATIONS_CONFIG_OR_SERVICE", file=sys.stderr)
+    except Exception as error:
+        if getattr(error, "code", None) == "email_address_invalid":
+            print("SEED_EMAIL_ADDRESS_INVALID_CONTACT_CLAUDE", file=sys.stderr)
+        else:
+            print("SEED_FAILED_CHECK_MIGRATIONS_CONFIG_OR_SERVICE", file=sys.stderr)
     finally:
         if lock_fd is not None:
             os.close(lock_fd)

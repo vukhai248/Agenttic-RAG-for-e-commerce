@@ -16,6 +16,20 @@ Script: `scripts/seed_bench.py`. Chạy từ gốc **workspace đã merge** đ�
 
 Kết quả: `{"dry_run": true, "valid_cases": 2}`. Không nạp credential, không tạo tài khoản, không gọi DB. Product_id=1 trong mẫu chỉ là chỗ điền; dry-run không khẳng định sản phẩm này tồn tại trên server.
 
+### Tạo tài khoản trước khi có dataset C (K4)
+
+Sau merge, sao lưu và áp dụng migration đã duyệt, có thể chạy ngay mẫu trung tính với ID có thật:
+
+```powershell
+& 'C:/Users/Admin/anaconda3/envs/DL/python.exe' scripts/seed_bench.py --cases scripts/fixtures/seed_bench.sample.jsonl --products-from-db
+```
+
+Cờ này chỉ đọc `products.id` theo thứ tự tăng dần, ánh xạ các ID placeholder khác nhau sang các ID thật khác nhau, giữ liên kết giữa order/review. Không sửa catalog hay stock. Nếu không đủ sản phẩm thì dừng trước khi tạo credential/tài khoản. Chạy lại khi catalog không đổi vẫn idempotent; nếu tập ID thấp nhất thay đổi, hash case thay đổi và script dừng thay vì tự ghi đè. Không dùng cờ remap này cho dataset C chính thức đã chọn product_id cụ thể.
+
+Khi dùng kèm --dry-run, vẫn chỉ kiểm JSONL; không truy vấn catalog, không khẳng định đã resolve ID. A5.4 chỉ được chạy thật sau khi lượt seed không phải dry-run hoàn tất.
+
+Nếu Supabase từ chối miền `@example.invalid`, script dừng exit1 với mã **SEED_EMAIL_ADDRESS_INVALID_CONTACT_CLAUDE**, giữ nguyên file credential và không tự thử tên miền khác. Báo mã này cho Claude để quyết định; không gửi nội dung file mật khẩu hoặc tự sửa email sang địa chỉ thật.
+
 ## Định dạng JSONL
 
 Mỗi dòng chỉ có `case_id`, `table`, `fields`. Không đưa label, expected_task, canary, gold_facts vào đây; giữ ground truth ở bộ dữ liệu riêng của C.

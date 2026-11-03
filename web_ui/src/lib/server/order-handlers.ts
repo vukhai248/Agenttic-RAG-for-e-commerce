@@ -106,24 +106,31 @@ export function createOrderHandlers(deps: PaymentDependencies) {
         return errorResponse(new OrderError('INVALID_SIGNATURE', 400, 'Chữ ký webhook không hợp lệ.'));
       }
       if (event.livemode !== false) return errorResponse(new OrderError('INVALID_EVENT', 400, 'Chỉ chấp nhận Stripe test mode.'));
-      if (!['checkout.session.completed', 'checkout.session.async_payment_succeeded'].includes(event.type)) return Response.json({ received: true });
+      if (!['checkout.session.completed', 'checkout.session.async_payment_succeeded', 'checkout.session.expired'].includes(event.type)) return Response.json({ received: true });
       const session = event.data.object as Stripe.Checkout.Session;
       if (!session || session.livemode !== false || session.mode !== 'payment' || typeof session.id !== 'string' || !session.id.startsWith('cs_test_')) {
         return errorResponse(new OrderError('INVALID_EVENT', 400, 'Checkout session không hợp lệ.'));
       }
-      if (session.payment_status !== 'paid') return Response.json({ received: true });
+      const expired = event.type === 'checkout.session.expired';
+      if (expired && session.payment_status === 'paid') return Response.json({ received: true });
+      if (!expired && session.payment_status !== 'paid') return Response.json({ received: true });
       const orderId = session.metadata?.order_id;
-      if (typeof orderId !== 'string' || !validOrderId(orderId) || !Number.isSafeInteger(session.amount_total) || session.amount_total! < 0 || session.currency !== 'vnd') {
+      if (typeof orderId !== 'string' || !validOrderId(orderId)
+        || (!expired && (!Number.isSafeInteger(session.amount_total) || session.amount_total! < 0 || session.currency !== 'vnd'))) {
         return errorResponse(new OrderError('INVALID_EVENT', 400, 'Thông tin thanh toán không hợp lệ.'));
       }
       try {
-        await deps.rpc('finalize_stripe_order', {
-          p_order_id: orderId, p_session_id: session.id, p_amount_total: session.amount_total, p_currency: session.currency,
-        });
+        if (expired) {
+          await deps.rpc('fail_stripe_order', { p_order_id: orderId, p_session_id: session.id });
+        } else {
+          await deps.rpc('finalize_stripe_order', {
+            p_order_id: orderId, p_session_id: session.id, p_amount_total: session.amount_total, p_currency: session.currency,
+          });
+        }
         return Response.json({ received: true });
       } catch (error) {
         const code = error instanceof Error ? error.message : '';
-        if (['PAYMENT_MISMATCH', 'NOT_FOUND', 'NOT_EDITABLE'].includes(code)) {
+        if (['PAYMENT_MISMATCH', 'NOT_FOUND', 'NOT_EDITABLE', 'INVALID_PRODUCT'].includes(code)) {
           console.error({ order_id: orderId, code });
           return Response.json({ received: true });
         }

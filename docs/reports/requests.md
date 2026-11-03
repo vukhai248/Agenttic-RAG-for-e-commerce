@@ -50,3 +50,13 @@ Ngày: 03/11/2026. Nhánh `feat/a-backend`.
 - Rà merge-tree sau c811652: 3 conflict dự kiến `.gitignore`, `docs/reports/requests.md`, `rag-service/app/main.py`. Git tree simulation không merge hay sửa nhánh frontend/main. Keep ignore union và hợp nhất requests; main.py dùng code backend mới (diff frontend ở đây chỉ là health cũ).
 - Đính chính QA plan của Anti: tồn kho là `products.stock`, webhook fulfillment dùng `checkout.session.completed`/`checkout.session.async_payment_succeeded`, không dùng payment_intent.succeeded. Acknowledge chuẩn là `{received:true}`; không yêu cầu trường already_processed. Khi replay event đã ký phải giữ chữ ký hợp lệ hoặc dùng Stripe CLI resend; kiểm DB để khẳng định kho chỉ trừ một lần.
 - A5 có 2 message mỗi exchange; chat3 lượt =>6 dòng user/agent. Role bot là agent theo schema, không phải assistant. Live A5.4 admin auth vẫn chờ seed thật; test skip không phải đạt.
+
+## Đợt1 bổ sung K1–K4 (Opus)
+
+- K1: auth.ts mới lazy client và trả lỗi cấu hình an toàn. Giữ export supabaseAdmin bằng proxy để route/frontend consumer không cần đổi import; thêm getSupabaseAdmin nếu cần explicit getter.
+- Backend cũ chưa có auth.ts và còn eager admin handlers baseline. Đã mang4 admin handler **đúng nguyên bản e1850a9 của Anti** sang backend (hash4/4 giống source), không tự phát triển logic route của Anti và không sửa worktree frontend. Khi merge giữ các handler đã duyệt này và auth.ts lazy mới; không lấy lại auth.ts eager ở frontend.
+- K2: INVALID_PRODUCT acknowledge200+log safe. Thêm checkout.session.expired, gọi fail_stripe_order với cả p_order_id/p_session_id. Migration **2026-11_expired_checkout.sql** là file thứ5 cần Claude duyệt/chủ đồ án apply; overload1 tham số cũ không đổi, không hủy paid/COD/session khác.
+- K3: write_chat_turn được await qua asyncio.to_thread; đã kiểm concurrent chat khi một log bị giữ chậm. Pipeline invoke vẫn đồng bộ baseline.
+- K4: trước khi có dataset C, sau migrate có thể seed `scripts/fixtures/seed_bench.sample.jsonl --products-from-db` để tự chọn product ID thật và tạo tài khoản A5.4. Dry-run không query catalog. Lỗi miền email báo SEED_EMAIL_ADDRESS_INVALID_CONTACT_CLAUDE; dừng, không đổi domain.
+- Test Node/PGlite nên dùng `--v8-pool-size=1 --test-concurrency=1` trên máy8GB để tránh V8 OOM khi nhiều engine khởi tạo song song; không bỏ test nào.
+- Báo cáo canonical đợt này `docs/reports/codex-K.md`. Đợt3 chỉ sau merge/migration/seed và có bugs.md backend trên nhánh Claude chỉ định.

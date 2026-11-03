@@ -1,4 +1,5 @@
 import sys
+import asyncio
 from pathlib import Path
 from uuid import uuid4
 
@@ -99,7 +100,7 @@ async def chat_endpoint(request: ChatRequest, authorization: Optional[str] = Hea
         tool_calls = result.get("tool_calls_used") or []
         tool_used = ", ".join([t.get("tool", "") for t in tool_calls if t.get("tool")]) or None
 
-        write_chat_turn(
+        await asyncio.to_thread(write_chat_turn,
             session_id=session_id, user_id=user_id, user_message=request.message,
             agent_message=final_answer, tool_calls=result.get("turn_tool_calls") or [],
             risk_level=result.get("risk_level") or "safe",

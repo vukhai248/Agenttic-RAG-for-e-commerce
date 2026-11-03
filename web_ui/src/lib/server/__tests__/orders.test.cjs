@@ -224,7 +224,7 @@ test('webhook database/stock failure remains retryable and does not return succe
   assert.equal((await handlers.webhook(webhookRequest())).status, 503);
 });
 
-for (const code of ['PAYMENT_MISMATCH', 'NOT_FOUND', 'NOT_EDITABLE']) {
+for (const code of ['PAYMENT_MISMATCH', 'NOT_FOUND', 'NOT_EDITABLE', 'INVALID_PRODUCT']) {
   test(`permanent webhook failure ${code} is acknowledged with only order ID and code logged`, async t => {
     const logged = [];
     t.mock.method(console, 'error', (...args) => logged.push(args));
@@ -244,6 +244,16 @@ test('unknown database failure stays retryable without logging error details or 
   assert.equal(response.status, 503);
   assert.deepEqual(logged, []);
   assert.doesNotMatch(JSON.stringify(await response.json()), /0912345678|private address/);
+});
+
+test('signed expired Checkout session fails only its bound unpaid order and is replayable', async () => {
+  const template=context().deps.verifyEvent();
+  const event={...template,type:'checkout.session.expired',data:{object:{...template.data.object,status:'expired',payment_status:'unpaid'}}};
+  const ctx=context({verifyEvent:()=>event});
+  for(let i=0;i<2;i++)assert.equal((await ctx.handlers.webhook(webhookRequest())).status,200);
+  assert.deepEqual(ctx.calls,[0,1].map(()=>({name:'fail_stripe_order',args:{p_order_id:id,p_session_id:'cs_test_order'}})));
+  const paid=context({verifyEvent:()=>({...event,data:{object:{...event.data.object,payment_status:'paid'}}})});
+  assert.equal((await paid.handlers.webhook(webhookRequest())).status,200);assert.equal(paid.calls.length,0);
 });
 
 test('malformed signed session without an ID returns 400 rather than throwing', async () => {
