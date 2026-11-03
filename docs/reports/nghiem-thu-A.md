@@ -85,3 +85,8 @@ Chi tiết: `FOX-Guardrails/docs/plans/prompts/antigravity-phanA.md` (mục "Ngh
 - Stripe: khoá trong `web_ui/.env.local` là `sk_test_`, không có khoá live, không có khoá trong git. Webhook đi qua Stripe CLI listener (local), đủ 3 event. Đã kiểm: hết hạn từ Stripe thật → DB, replay 2 lần, chữ ký sai → 400. **Chưa kiểm**: thanh toán thành công bằng thẻ test (checklist §5 mục 3) → Đợt 3.
 - Listener và Next.js phải bật lại theo `RUN.md` mỗi lần máy khởi động lại.
 - Phần A chỉ còn Đợt 3 (QA toàn web, Anti) và sửa lỗi QA (cả hai).
+
+## Lần 12 — 03/11/2026 · Anti QA Đợt 3 (`4f3cd6d`)
+
+- **Đạt có điều kiện.** Thanh toán Stripe thành công đã kiểm thật (Claude xác nhận đơn `542da29f…` `paid` và đã trừ kho). Còn thiếu: 3/5 câu chat (đặc biệt ticket: DB 0 ticket), ca không gửi `session_id`, ca 409 `NOT_EDITABLE`, `--reset`, replay webhook thành công, bảng 9 ca, danh sách bản ghi QA → gói QA2.
+- Lỗi mới: **BUG-A-01** một user review một sản phẩm nhiều lần (3 bản trùng) → Codex K5.
