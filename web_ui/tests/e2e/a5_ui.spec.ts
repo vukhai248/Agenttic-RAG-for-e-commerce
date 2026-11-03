@@ -1,6 +1,4 @@
 import { test, expect, Page, Route } from '@playwright/test';
-import fs from 'fs';
-import path from 'path';
 import { createClient } from '@supabase/supabase-js';
 
 test.describe('Gói A5-UI: Dữ liệu thật Admin & Nhật ký hội thoại Chat Logs (H9, F2, F3)', () => {
@@ -224,35 +222,12 @@ test.describe('Gói A5-UI: Dữ liệu thật Admin & Nhật ký hội thoại C
   });
 
   test('A5.4: Chặn đứng tấn công leo quyền (F2 Privilege Escalation) khi user tự sửa user_metadata.role="admin"', async ({ request }) => {
-    // F5: Kiểm tra xác thực quyền server-side thật qua requireRole (KHÔNG mock server)
-    // 1. Đọc thông tin tài khoản benchmark từ .env.bench hoặc environment variables
-    const getBenchCredentials = () => {
-      const envBenchPaths = [
-        path.resolve(process.cwd(), '.env.bench'),
-        path.resolve(process.cwd(), '../.env.bench')
-      ];
-      let email = process.env.BENCH_CUSTOMER_EMAIL;
-      let password = process.env.BENCH_CUSTOMER_PASSWORD;
+    // F5 & F9: Kiểm tra xác thực quyền server-side thật qua requireRole (KHÔNG mock server)
+    // Biến môi trường được playwright.config.ts nạp tự động qua loadEnvConfig (@next/env)
+    const email = process.env.BENCH_CUSTOMER_EMAIL;
+    const password = process.env.BENCH_CUSTOMER_PASSWORD;
 
-      for (const envPath of envBenchPaths) {
-        if (fs.existsSync(envPath)) {
-          const content = fs.readFileSync(envPath, 'utf-8');
-          for (const line of content.split('\n')) {
-            const trimmed = line.trim();
-            if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
-              const [k, ...v] = trimmed.split('=');
-              const key = k.trim();
-              const val = v.join('=').trim().replace(/^["']|["']$/g, '');
-              if (key === 'BENCH_CUSTOMER_EMAIL' && !email) email = val;
-              if (key === 'BENCH_CUSTOMER_PASSWORD' && !password) password = val;
-            }
-          }
-        }
-      }
-      return { email, password };
-    };
-
-    const { email, password } = getBenchCredentials();
+    // Chỉ skip khi thiếu biến cấu hình tài khoản (thuộc phần backend của Codex)
     if (!email || !password) {
       test.skip(true, 'Bỏ qua test vì chưa cấu hình BENCH_CUSTOMER_EMAIL / BENCH_CUSTOMER_PASSWORD trong .env.bench (thuộc tài khoản backend của Codex)');
       return;
@@ -260,30 +235,26 @@ test.describe('Gói A5-UI: Dữ liệu thật Admin & Nhật ký hội thoại C
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-    if (!supabaseUrl || !supabaseAnonKey) {
-      test.skip(true, 'Thiếu cấu hình NEXT_PUBLIC_SUPABASE_URL hoặc NEXT_PUBLIC_SUPABASE_ANON_KEY');
-      return;
-    }
+    expect(supabaseUrl, 'Thiếu cấu hình NEXT_PUBLIC_SUPABASE_URL (cần được nạp từ .env.local)').toBeTruthy();
+    expect(supabaseAnonKey, 'Thiếu cấu hình NEXT_PUBLIC_SUPABASE_ANON_KEY (cần được nạp từ .env.local)').toBeTruthy();
 
     const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       auth: { persistSession: false, autoRefreshToken: false }
     });
 
-    // 2. Đăng nhập bằng tài khoản customer thật
+    // 1. Đăng nhập bằng tài khoản customer thật (khi đã có cấu hình, lỗi đăng nhập là lỗi thật, không được skip)
     const { data: authData, error: loginError } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
-    if (loginError || !authData.session) {
-      test.skip(true, `Không thể đăng nhập bằng tài khoản bench_customer: ${loginError?.message}`);
-      return;
-    }
+    expect(loginError, `Đăng nhập bench_customer thất bại: ${loginError?.message}`).toBeNull();
+    expect(authData?.session, 'Phiên đăng nhập không tồn tại sau khi signInWithPassword').toBeTruthy();
 
-    const accessToken = authData.session.access_token;
+    const accessToken = authData.session!.access_token;
     const userId = authData.user.id;
 
     try {
-      // 3. Giả lập kẻ tấn công gọi Supabase client tự sửa user_metadata: { role: 'admin' }
+      // 2. Giả lập kẻ tấn công gọi Supabase client tự sửa user_metadata: { role: 'admin' }
       const { error: updateMetaError } = await supabase.auth.updateUser({
         data: { role: 'admin' }
       });
