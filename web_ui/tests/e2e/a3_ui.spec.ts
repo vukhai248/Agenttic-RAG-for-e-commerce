@@ -126,12 +126,12 @@ test.describe('Gói A3-UI: Customer Data Surface & Order Workflow', () => {
 
     // 11. Xác minh payload đã gửi lên POST /api/orders đúng cấu trúc hợp đồng API §3
     expect(orderRequestBody).not.toBeNull();
-    expect(orderRequestBody.recipient_name).toBe('Nguyễn Văn Test');
-    expect(orderRequestBody.recipient_phone).toBe('0987654321');
-    expect(orderRequestBody.province).toBe('Thành phố Hà Nội');
-    expect(orderRequestBody.ward).toBe('Phường Phúc Xá');
-    expect(orderRequestBody.note).toBe('Giao giờ hành chính, gọi trước 15 phút');
-    expect(orderRequestBody.payment_method).toBe('cod');
+    expect(orderRequestBody!.recipient_name).toBe('Nguyễn Văn Test');
+    expect(orderRequestBody!.recipient_phone).toBe('0987654321');
+    expect(orderRequestBody!.province).toBe('Thành phố Hà Nội');
+    expect(orderRequestBody!.ward).toBe('Phường Phúc Xá');
+    expect(orderRequestBody!.note).toBe('Giao giờ hành chính, gọi trước 15 phút');
+    expect(orderRequestBody!.payment_method).toBe('cod');
 
     // Chụp ảnh màn hình CUA nghiệm thu
     await page.screenshot({ path: 'tests/e2e/screenshots/a3/checkout_success_cod.png', fullPage: true });
@@ -238,9 +238,9 @@ test.describe('Gói A3-UI: Customer Data Surface & Order Workflow', () => {
 
     // Xác minh payload đúng hợp đồng API §3
     expect(reviewPayload).not.toBeNull();
-    expect(reviewPayload.product_id).toBe(1);
-    expect(reviewPayload.rating).toBe(4);
-    expect(reviewPayload.comment).toBe(testComment);
+    expect(reviewPayload!.product_id).toBe(1);
+    expect(reviewPayload!.rating).toBe(4);
+    expect(reviewPayload!.comment).toBe(testComment);
 
     await page.screenshot({ path: 'tests/e2e/screenshots/a3/review_success_201.png' });
   });
@@ -324,7 +324,7 @@ test.describe('Gói A3-UI: Customer Data Surface & Order Workflow', () => {
     // Xác minh thông báo cập nhật thành công và ghi chú mới xuất hiện
     await expect(page.locator('text=Cập nhật ghi chú giao hàng thành công!')).toBeVisible();
     await expect(page.locator('text=Ghi chú mới: Gọi trước 30 phút, để tại quầy lễ tân 🏢')).toBeVisible();
-    expect(patchPayload.note).toBe('Ghi chú mới: Gọi trước 30 phút, để tại quầy lễ tân 🏢');
+    expect(patchPayload!.note).toBe('Ghi chú mới: Gọi trước 30 phút, để tại quầy lễ tân 🏢');
 
     await page.screenshot({ path: 'tests/e2e/screenshots/a3/account_edit_note_success.png' });
 

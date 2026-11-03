@@ -16,11 +16,12 @@ Xác thực toàn diện tính toàn vẹn chức năng, luồng nghiệp vụ E
 > [!IMPORTANT]
 > **Bộ kiểm thử này CHỈ ĐƯỢC PHÉP CHẠY khi thỏa mãn toàn bộ các điều kiện sau:**
 > 1. Nhánh `feat/a-frontend` và `feat/a-backend` đã được Claude Opus gộp (merge) thành công vào nhánh chung.
-> 2. Chủ đồ án đã thực thi an toàn đủ 4 file migration theo đúng thứ tự trên Supabase (kèm bản sao lưu toàn bộ database trước khi chạy):
+> 2. Chủ đồ án đã thực thi an toàn đủ 5 file migration theo đúng thứ tự trên Supabase (kèm bản sao lưu toàn bộ database trước khi chạy):
 >    - `database/migrations/2026-11_payment_and_address.sql` (thu hồi quyền INSERT của client, chuyển tạo đơn sang RPC server).
 >    - `database/migrations/2026-11_chat_logs_guard.sql` (thêm cột `guard_decision_ids text[]` và index `(session_id, created_at)`, khóa quyền đọc/ghi client, cấp cho service_role).
 >    - `database/migrations/2026-11_product_reviews.sql` (thu hồi quyền ghi client, tạo RPC `create_product_review` ràng buộc chỉ khách đã mua mới được đánh giá).
 >    - `database/migrations/2026-11_seed_bench.sql` (bảng mapping và RPC phục vụ benchmark seed).
+>    - `database/migrations/2026-11_expired_checkout.sql` (bổ sung overload hàm RPC `fail_stripe_order(p_order_id uuid, p_session_id text)` xử lý sự kiện `checkout.session.expired` có chữ ký).
 > 3. Đã chạy seed dữ liệu đánh giá benchmark theo [SEED-BENCH.md](../SEED-BENCH.md):
 >    - Lệnh: `conda run -n DL python scripts/seed_bench.py --cases D:/create/DATN/FOX-Guardrails/eval/datasets/vi_cskh/seed_cases.jsonl`
 >    - File `.env.bench` được tạo tự động tại gốc workspace chứa credentials của `bench_customer_a`, `bench_customer_b`, `bench_admin`.
@@ -196,17 +197,17 @@ Xác thực toàn diện tính toàn vẹn chức năng, luồng nghiệp vụ E
 - **Các bước thực hiện**:
   1. **Chuẩn bị dữ liệu mẫu**:
      - Do bộ dataset chính thức từ Tầng C đang hoàn thiện, tạm thời sử dụng file fixture có sẵn `scripts/fixtures/seed_bench.sample.jsonl`.
-     - Chỉnh sửa `product_id` trong file fixture trên thành một `id` sản phẩm có thật trong database Supabase hiện tại.
+     - Sử dụng cờ `--products-from-db` để script tự động lấy các `product_id` hợp lệ có sẵn trong cơ sở dữ liệu Supabase, không cần sửa tay `product_id` trong file fixture.
   2. **Kiểm tra tính Idempotent**:
-     - Chạy script seed lần 2 với cùng một file dữ liệu JSONL:
+     - Chạy script seed lần 2 với cùng một file dữ liệu JSONL kèm cờ `--products-from-db`:
        ```powershell
-       conda run -n DL python scripts/seed_bench.py --cases scripts/fixtures/seed_bench.sample.jsonl
+       conda run -n DL python scripts/seed_bench.py --cases scripts/fixtures/seed_bench.sample.jsonl --products-from-db
        ```
      - **Kỳ vọng**: Dữ liệu và các ID bản ghi được giữ nguyên vẹn, không sinh thêm dòng rác hay nhân đôi bản ghi.
   3. **Kiểm tra cơ chế Reset có kiểm soát (`--reset`)**:
-     - Chạy lệnh seed kèm cờ `--reset`:
+     - Chạy lệnh seed kèm cờ `--reset` và `--products-from-db`:
        ```powershell
-       conda run -n DL python scripts/seed_bench.py --cases scripts/fixtures/seed_bench.sample.jsonl --reset
+       conda run -n DL python scripts/seed_bench.py --cases scripts/fixtures/seed_bench.sample.jsonl --products-from-db --reset
        ```
      - **Kỳ vọng**: Script chỉ xóa và tái tạo các dòng dữ liệu nằm trong namespace mapping của file credential hiện tại; tuyệt đối không xóa dữ liệu thật của cửa hàng hoặc namespace khác.
      - Nếu một đơn hàng bench đang có ticket ngoại lai tham chiếu tới: script từ chối reset (`BENCH_REFERENCED`) để tránh phá vỡ toàn vẹn dữ liệu.

@@ -242,18 +242,33 @@ export default function AdminPage() {
     setIsAdminChatLoading(true);
 
     try {
-      // Gửi request tới API chat admin
+      // Gửi request tới API chat admin kèm Access Token (J2)
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+
       const response = await fetch('/api/chat/admin', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {})
+        },
         body: JSON.stringify({
           message: userMsg,
           session_id: 'admin-session-' + Date.now()
         })
       });
 
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Lỗi kết nối AI Assistant');
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (data?.error?.code === 'ADMIN_ASSISTANT_UNAVAILABLE') {
+          throw new Error('Trợ lý admin chưa được kết nối.');
+        }
+        if (response.status === 401 || response.status === 403) {
+          throw new Error('Thiếu quyền quản trị viên hoặc nhân viên.');
+        }
+        const errorMsg = typeof data?.error === 'object' ? data.error.message : data?.error;
+        throw new Error(errorMsg || `Lỗi máy chủ (${response.status})`);
+      }
 
       // Thêm phản hồi của AI Assistant vào danh sách
       setAdminChatMessages(prev => [
@@ -265,13 +280,14 @@ export default function AdminPage() {
           sources: data.sources
         }
       ]);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Lỗi chat AI Admin:', err);
+      const errMsg = err instanceof Error ? err.message : 'Lỗi kết nối với Trợ lý AI Admin.';
       setAdminChatMessages(prev => [
         ...prev,
         {
           role: 'assistant',
-          content: 'Lỗi: Không thể kết nối với Trợ lý AI Admin. Vui lòng kiểm tra lại kết nối mạng hoặc máy chủ API.'
+          content: errMsg
         }
       ]);
     } finally {
@@ -4733,12 +4749,7 @@ export default function AdminPage() {
                 {selectedChatSession ? (() => {
                   const sessionLogs = chatLogs
                     .filter((l) => {
-                      if (l.session_id !== selectedChatSession) return false;
-                      const logUser = l.user_id || 'anonymous';
-                      if (selectedChatUser && selectedChatUser !== 'anonymous') {
-                        return logUser === selectedChatUser || !l.user_id;
-                      }
-                      return logUser === 'anonymous';
+                      return l.session_id === selectedChatSession && (l.user_id ?? 'anonymous') === selectedChatUser;
                     })
                     .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 

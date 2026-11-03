@@ -1,6 +1,5 @@
-import http from 'http';
-import type { AddressInfo } from 'net';
 import { test, expect } from '@playwright/test';
+import { formatBackend4xxError, formatBackend503Error } from '../../src/app/api/chat/proxy-response';
 
 test.describe('Gói A1-UI: Sửa lỗi nền Chatbot (H1 Session ID UUID & H10 Chặn Mock Fake Reply)', () => {
 
@@ -116,38 +115,29 @@ test.describe('Gói A1-UI: Sửa lỗi nền Chatbot (H1 Session ID UUID & H10 C
     await page.screenshot({ path: 'tests/e2e/screenshots/a1/chat_backend_unavailable_503.png' });
   });
 
-  test('A1.4: Proxy /api/chat chuyển tiếp nguyên vẹn lỗi 4xx (422) từ backend, không biến thành 503 (I1)', async ({ request }) => {
-    // 1. Tạo HTTP server mock tạm thời giả lập FastAPI backend trả về 422
-    const mockFastApiServer = http.createServer((req, res) => {
-      res.writeHead(422, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        detail: 'session_id cannot exceed 100 characters'
-      }));
-    });
+  test('A1.4: Định dạng lỗi backend theo hợp đồng {error: {code, message}} chuẩn Hợp đồng API §3 (J1)', async () => {
+    // 1. Kiểm tra mã 422: trả INVALID_REQUEST, message chung, không lộ detail
+    const err422 = formatBackend4xxError(422);
+    expect(err422.error.code).toBe('INVALID_REQUEST');
+    expect(err422.error.message).toBeTruthy();
+    expect((err422.error as Record<string, unknown>).detail).toBeUndefined();
 
-    await new Promise<void>((resolve) => mockFastApiServer.listen(0, '127.0.0.1', resolve));
-    const port = (mockFastApiServer.address() as AddressInfo).port;
+    // 2. Kiểm tra mã 401: trả UNAUTHENTICATED
+    const err401 = formatBackend4xxError(401);
+    expect(err401.error.code).toBe('UNAUTHENTICATED');
 
-    try {
-      // 2. Gửi request tới /api/chat, chuyển tiếp tới mock FastAPI server qua header x-mock-rag-url
-      const response = await request.post('/api/chat', {
-        headers: {
-          'x-mock-rag-url': `http://127.0.0.1:${port}/chat`
-        },
-        data: {
-          message: 'Xin chào',
-          session_id: 'a'.repeat(105),
-        }
-      });
+    // 3. Kiểm tra mã 403: trả FORBIDDEN
+    const err403 = formatBackend4xxError(403);
+    expect(err403.error.code).toBe('FORBIDDEN');
 
-      // 3. Kỳ vọng: Trả về đúng 422 và body JSON nguyên vẹn, không bị nuốt thành 503
-      expect(response.status()).toBe(422);
-      const body = await response.json();
-      expect(body).toHaveProperty('detail');
-      expect(body.detail).toContain('100 characters');
-    } finally {
-      await new Promise<void>((resolve) => mockFastApiServer.close(() => resolve()));
-    }
+    // 4. Kiểm tra mã 4xx khác (ví dụ 400): trả BAD_REQUEST
+    const err400 = formatBackend4xxError(400);
+    expect(err400.error.code).toBe('BAD_REQUEST');
+
+    // 5. Kiểm tra mã 503: trả BACKEND_UNAVAILABLE
+    const err503 = formatBackend503Error();
+    expect(err503.error.code).toBe('BACKEND_UNAVAILABLE');
+    expect((err503.error as Record<string, unknown>).details).toBeUndefined();
   });
 
 });

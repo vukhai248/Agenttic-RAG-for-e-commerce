@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { formatBackend4xxError, formatBackend503Error } from './proxy-response';
 
 export async function POST(request: Request) {
   try {
@@ -13,15 +14,8 @@ export async function POST(request: Request) {
     }
 
     // 1. Cố gắng kết nối tới FastAPI Backend AI Service
-    // Đọc URL của RAG service từ biến môi trường (Ví dụ: NEXT_PUBLIC_RAG_SERVICE_URL trong .env.local)
-    // Hoặc sử dụng fallback localhost của FastAPI (mặc định cổng 8000)
     let ragServiceUrl = process.env.NEXT_PUBLIC_RAG_SERVICE_URL || 'http://localhost:8080/chat';
-
-    // Cho phép chuyển tiếp tới URL mock trong môi trường test
-    const mockRagUrl = request.headers.get('x-mock-rag-url');
-    if (process.env.NODE_ENV !== 'production' && mockRagUrl) {
-      ragServiceUrl = mockRagUrl;
-    } else if (ragServiceUrl.includes('/api/chat')) {
+    if (ragServiceUrl.includes('/api/chat')) {
       ragServiceUrl = 'http://localhost:8080/chat';
     }
 
@@ -50,15 +44,8 @@ export async function POST(request: Request) {
         console.log('[Next.js API Proxy] Nhận phản hồi thành công từ AI Backend');
         return NextResponse.json(data);
       } else if (apiResponse.status >= 400 && apiResponse.status < 500) {
-        // I1: Backend trả 4xx (ví dụ 422 session_id quá dài, 401...) thì chuyển nguyên status và body JSON
-        let errJson: unknown;
-        try {
-          errJson = await apiResponse.json();
-        } catch {
-          const text = await apiResponse.text().catch(() => '');
-          errJson = { error: text || apiResponse.statusText };
-        }
-        return NextResponse.json(errJson, { status: apiResponse.status });
+        // J1: Backend trả 4xx thì chuẩn hóa lỗi theo format {error: {code, message}}
+        return NextResponse.json(formatBackend4xxError(apiResponse.status), { status: apiResponse.status });
       } else {
         const errText = await apiResponse.text().catch(() => '');
         backendError = `AI Backend trả mã lỗi ${apiResponse.status} ${apiResponse.statusText}`;
@@ -72,15 +59,7 @@ export async function POST(request: Request) {
 
     // Khi không bật cờ mock (mặc định tắt), trả 503 BACKEND_UNAVAILABLE theo Hợp đồng API §3
     if (!allowMockChat) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'BACKEND_UNAVAILABLE',
-            message: 'Hệ thống AI tư vấn hiện đang tạm thời gián đoạn kết nối. Vui lòng thử lại sau ít phút hoặc tạo ticket để nhân viên hỗ trợ trực tiếp.',
-          }
-        },
-        { status: 503 }
-      );
+      return NextResponse.json(formatBackend503Error(), { status: 503 });
     }
 
     // 2. Chế độ Mock Fallback (chỉ chạy khi NEXT_PUBLIC_ALLOW_MOCK_CHAT=true)

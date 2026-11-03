@@ -191,7 +191,8 @@ npm.cmd run build
 >    2. `database/migrations/2026-11_chat_logs_guard.sql` (thêm cột `guard_decision_ids text[]` và index `(session_id, created_at)`, khóa quyền đọc/ghi của client `anon`, `authenticated`, chỉ cấp quyền `SELECT`, `INSERT` cho `service_role`).
 >    3. `database/migrations/2026-11_product_reviews.sql` (bảng `reviews` đã có sẵn; migration thu hồi quyền ghi `INSERT`, `UPDATE`, `DELETE` của client `anon`, `authenticated`, tạo hàm RPC `create_product_review` ràng buộc chỉ khách đã mua mới được đánh giá).
 >    4. `database/migrations/2026-11_seed_bench.sql` (khởi tạo bảng mapping và RPC phục vụ bộ dữ liệu đánh giá benchmark).
-> 5. **Khởi tạo dữ liệu Benchmark (Seed)**: Sau khi chạy đủ 4 migration, thực hiện seed dữ liệu benchmark theo hướng dẫn tại [SEED-BENCH.md](SEED-BENCH.md).
+>    5. `database/migrations/2026-11_expired_checkout.sql` (bổ sung overload hàm RPC `fail_stripe_order(p_order_id uuid, p_session_id text)` xử lý sự kiện `checkout.session.expired` có chữ ký).
+> 5. **Khởi tạo dữ liệu Benchmark (Seed)**: Sau khi chạy đủ 5 migration, thực hiện seed dữ liệu benchmark theo hướng dẫn tại [SEED-BENCH.md](SEED-BENCH.md).
 
 ### 5.2 Dữ liệu Vector ChromaDB
 - ChromaDB đã được nạp sẵn dữ liệu vector của hơn 1.300 sản phẩm và bộ quy tắc chính sách tại thư mục: `database/chroma_db/`.

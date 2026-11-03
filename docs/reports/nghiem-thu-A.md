@@ -53,3 +53,10 @@ Chi tiết: `FOX-Guardrails/docs/plans/prompts/antigravity-phanA.md` (mục "Ngh
 - Anti H1, H2: **Đạt có điều kiện**. Còn 4 chỗ đoán (mô tả migration 2–3, điều kiện review COD, đường gọi ca 422, dataset Ca 9) → gói H3.
 - Kế hoạch còn lại đã giao: Đợt 1 Anti (H3, I1–I4), Codex (K1–K4) → Claude merge, chủ đồ án chạy migration và seed → Đợt 3 QA toàn web (Anti) và sửa lỗi (cả hai) → nghiệm thu cuối Phần A.
 - Mới phát hiện: `/api/chat` biến 4xx thành 503; `/api/chat/admin` trả lời giả mà không kiểm quyền.
+
+## Lần 7 — 03/11/2026 · Codex `5c0580e` + Anti `e1850a9`
+
+- Codex K1–K4: **Đạt**. Claude chạy lại: pytest 93, Node/PGlite 77/77. Migration thứ 5 `2026-11_expired_checkout.sql`: **Claude đã duyệt**.
+- Anti H3, I3: **Đạt**. I1, I2, I4: **Chưa đạt** → gói J1–J4 (bỏ header `x-mock-rag-url` vì là lỗ SSRF; panel trợ lý admin không gửi token; I4 vẫn gộp log ẩn danh; cập nhật tài liệu theo K4 và migration 5).
+- Merge thử: 4 xung đột (`.gitignore`, `requests.md`, `rag-service/app/main.py`, `web_ui/src/lib/server/auth.ts` → giữ bản backend cho 2 file code).
+- Chưa merge, chưa chạy migration. Merge sau khi J đạt.

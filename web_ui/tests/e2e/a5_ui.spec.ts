@@ -251,7 +251,8 @@ test.describe('Gói A5-UI: Dữ liệu thật Admin & Nhật ký hội thoại C
     expect(authData?.session, 'Phiên đăng nhập không tồn tại sau khi signInWithPassword').toBeTruthy();
 
     const accessToken = authData.session!.access_token;
-    const userId = authData.user.id;
+    expect(authData.user).not.toBeNull();
+      const userId = authData.user!.id;
 
     try {
       // 2. Giả lập kẻ tấn công gọi Supabase client tự sửa user_metadata: { role: 'admin' }
@@ -335,4 +336,86 @@ test.describe('Gói A5-UI: Dữ liệu thật Admin & Nhật ký hội thoại C
     expect(dataBadToken.error?.code).toBe('UNAUTHENTICATED');
   });
 
+
+  test('A5.6: Tab Hội thoại Admin cách ly phiên tuyệt đối theo (user_id ?? "anonymous", session_id) (J3)', async ({ page }) => {
+    await setupAdminSession(page);
+
+    const sharedSessionId = 'shared-session-uuid-test';
+    const mockLogsJ3 = [
+      {
+        id: 'log_user_a',
+        session_id: sharedSessionId,
+        user_id: 'user_alpha',
+        role: 'user',
+        message: 'Tin nhắn độc quyền của User Alpha',
+        tool_used: null,
+        risk_level: 'low',
+        guard_decision_ids: [],
+        created_at: '2026-11-03T01:00:00.000Z'
+      },
+      {
+        id: 'log_user_b',
+        session_id: sharedSessionId,
+        user_id: 'user_beta',
+        role: 'user',
+        message: 'Tin nhắn độc quyền của User Beta',
+        tool_used: null,
+        risk_level: 'low',
+        guard_decision_ids: [],
+        created_at: '2026-11-03T01:00:10.000Z'
+      },
+      {
+        id: 'log_guest',
+        session_id: sharedSessionId,
+        user_id: null,
+        role: 'user',
+        message: 'Tin nhắn độc quyền của Khách Ẩn Danh',
+        tool_used: null,
+        risk_level: 'low',
+        guard_decision_ids: [],
+        created_at: '2026-11-03T01:00:20.000Z'
+      }
+    ];
+
+    await page.route('**/api/admin/chat-logs*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          chat_logs: mockLogsJ3,
+          total: 3,
+          limit: 100,
+          offset: 0
+        })
+      });
+    });
+
+    await page.goto('/admin');
+    await page.waitForTimeout(1000);
+
+    const chatLogsTabBtn = page.locator('[data-testid="admin-nav-chat-logs"]');
+    await chatLogsTabBtn.click();
+    await expect(page.locator('[data-testid="panel-chat-logs"]')).toBeVisible({ timeout: 10000 });
+
+    // 1. Click chọn dòng log của User Alpha
+    const rowUserA = page.locator('[data-testid="chat-log-row-log_user_a"]');
+    await rowUserA.click();
+    await page.waitForTimeout(300);
+
+    // Cột chi tiết phiên bên phải CHỈ hiển thị tin nhắn của User Alpha
+    const detailPanel = page.locator('div.sticky');
+    await expect(detailPanel.locator('text=Tin nhắn độc quyền của User Alpha')).toBeVisible();
+    await expect(detailPanel.locator('text=Tin nhắn độc quyền của User Beta')).toHaveCount(0);
+    await expect(detailPanel.locator('text=Tin nhắn độc quyền của Khách Ẩn Danh')).toHaveCount(0);
+
+    // 2. Click chọn dòng log của Khách Ẩn Danh (null user_id)
+    const rowGuest = page.locator('[data-testid="chat-log-row-log_guest"]');
+    await rowGuest.click();
+    await page.waitForTimeout(300);
+
+    // Cột chi tiết phiên CHỈ hiển thị tin nhắn của Khách Ẩn Danh
+    await expect(detailPanel.locator('text=Tin nhắn độc quyền của Khách Ẩn Danh')).toBeVisible();
+    await expect(detailPanel.locator('text=Tin nhắn độc quyền của User Alpha')).toHaveCount(0);
+    await expect(detailPanel.locator('text=Tin nhắn độc quyền của User Beta')).toHaveCount(0);
+  });
 });
