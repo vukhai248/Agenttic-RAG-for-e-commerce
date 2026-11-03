@@ -86,6 +86,15 @@ test.describe('Gói A3-UI: Customer Data Surface & Order Workflow', () => {
     await page.goto('/checkout');
     await expect(page.locator('h1')).toContainText('Thanh toán đơn hàng', { timeout: 10000 });
 
+    // Khắc phục F6 (Root Cause của hiện tượng flake test A3.1):
+    // Trang /checkout nạp file địa chính bất đồng bộ `/data/vietnam-addresses.json` rồi mới phục hồi
+    // Tỉnh/Quận/Phường từ localStorage vào state. Khi 6 workers chạy song song tải CPU cao, nếu click submit
+    // trước khi fetch giải quyết xong, validation form chặn lại và không kích hoạt POST /api/orders.
+    // Chờ 3 dropdown hiển thị đầy đủ tên địa chính trước khi tiếp tục:
+    await expect(page.locator('button:has-text("Thành phố Hà Nội")')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('button:has-text("Quận Ba Đình")')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('button:has-text("Phường Phúc Xá")')).toBeVisible({ timeout: 10000 });
+
     // 5. Điền thêm ghi chú giao hàng (≤ 500 ký tự)
     const noteInput = page.locator('input[placeholder*="Ví dụ: Giao hàng giờ hành chính"]');
     await noteInput.fill('Giao giờ hành chính, gọi trước 15 phút');
