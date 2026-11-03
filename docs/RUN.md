@@ -71,10 +71,10 @@ copy .env.example .env
 | `VECTOR_DB_DIR` | Có | Đường dẫn tương đối hoặc tuyệt đối tới ChromaDB (mặc định: `../database/chroma_db`). |
 | `LEGACY_LLM_GUARDRAIL` | Tùy chọn | Cơ chế guardrail LLM cũ (giá trị: `on` / `off`, mặc định: `on`). |
 | `LEGACY_PROMPT_DEFENSE` | Tùy chọn | Bộ lọc phòng vệ prompt injection cũ (giá trị: `on` / `off`, mặc định: `on`). |
-| `FOX_GUARD_MODE` | Tùy chọn | Chế độ bảo vệ FOX-Guardrails (giá trị: `off` / `baseline` / `guard`, mặc định: `off`). |
+| `FOX_GUARD_MODE` | Tùy chọn | Chế độ bảo vệ FOX-Guardrails. Hiện tại **chỉ chấp nhận duy nhất giá trị `off`** (các giá trị khác sẽ báo lỗi cho tới khi triển khai Phần B; mặc định: `off`). |
 | `FOX_GUARD_ARM` | Tùy chọn | Tên cụm kiểm nghiệm FOX-Guardrails phục vụ A/B testing đối chuẩn. |
-| `BENCH_RECORD` | Tùy chọn | Bật/tắt ghi dữ liệu đánh giá benchmark vào cơ sở dữ liệu (`true` / `false`). |
-| `BENCH_TEMPERATURE` | Tùy chọn | Nhiệt độ lấy mẫu (sampling temperature) cho LLM khi chạy benchmark (ví dụ: `0.0`). |
+| `BENCH_RECORD` | Tùy chọn | Bật ghi dữ liệu đánh giá benchmark (đặt giá trị **`1`** để bật; giá trị khác hoặc `true` sẽ không ghi gì). Dữ liệu được ghi dưới dạng JSONL cục bộ vào `rag-service/bench_records/YYYY-MM-DD.jsonl` (đã gitignore), **không ghi vào cơ sở dữ liệu**. |
+| `BENCH_TEMPERATURE` | Tùy chọn | Nhiệt độ lấy mẫu (sampling temperature) cho LLM khi chạy benchmark (số thực từ `0.0` đến `2.0`; bỏ biến thì giữ cấu hình mặc định). |
 
 ### 3.2 Frontend (`web_ui/.env.local`)
 Sao chép mẫu cấu hình từ `web_ui/.env.example` sang `web_ui/.env.local`:
@@ -101,7 +101,7 @@ copy .env.example .env.local
 | `NEXT_PUBLIC_SAFE_RENDER` | Tùy chọn | Mặc định `true`. Bật chế độ render an toàn, chặn link ngoài và ẩn ảnh lạ. |
 
 #### Chuyển tiếp Stripe Webhook khi chạy Local
-Để nhận sự kiện webhook thanh toán Stripe (`payment_intent.succeeded`) trên môi trường phát triển local, sử dụng Stripe CLI:
+Để nhận sự kiện webhook thanh toán Stripe (`checkout.session.completed` và `checkout.session.async_payment_succeeded`) trên môi trường phát triển local, sử dụng Stripe CLI:
 ```powershell
 # 1. Đăng nhập Stripe CLI
 stripe login
@@ -184,9 +184,14 @@ npm.cmd run build
 > [!CAUTION]
 > **CẢNH BÁO NGUY HIỂM VỀ DỮ LIỆU**:
 > 1. Tuyệt đối **KHÔNG BAO GIỜ CHẠY LẠI file `database/setup.sql`** trên cơ sở dữ liệu Supabase đang hoạt động. File này chứa các lệnh `DROP TABLE ... CASCADE` sẽ xóa vĩnh viễn toàn bộ dữ liệu sản phẩm, đơn hàng và tài khoản!
-> 2. File migration mới: `database/migrations/2026-11_payment_and_address.sql` **do chủ đồ án chạy** trực tiếp trên Supabase SQL Editor.
-> 3. **Thời điểm thực thi**: **CHỈ CHẠY SAU KHI ĐÃ MERGE FRONTEND** vào nhánh chính. Lý do: Migration này sẽ thu hồi quyền `INSERT` trực tiếp vào bảng `orders` từ phía client (`REVOKE INSERT ON orders FROM authenticated, anon`) và chuyển toàn bộ việc tạo đơn/trừ kho sang hàm RPC bảo mật phía server. Nhánh frontend (`feat/a-frontend`) đã được hoàn thiện để gọi API server, nên chỉ khi code frontend đã merge thì hệ thống mới hoạt động trơn tru.
-> 4. **Sao lưu trước khi chạy**: Thực hiện xuất backup dữ liệu bảng `orders` hiện tại trước khi bấm chạy migration.
+> 2. **Sao lưu trước khi chạy**: Thực hiện xuất backup **toàn bộ cơ sở dữ liệu** (toàn bộ database schema & data, không chỉ riêng bảng `orders`) trước khi thực hiện migration.
+> 3. **Thời điểm thực thi**: **CHỈ CHẠY SAU KHI ĐÃ MERGE FRONTEND** vào nhánh chính.
+> 4. **Thứ tự thực thi migration bắt buộc** (do chủ đồ án chạy lần lượt trên Supabase SQL Editor):
+>    1. `database/migrations/2026-11_payment_and_address.sql` (thu hồi quyền INSERT trực tiếp của client vào bảng `orders`, chuyển luồng tạo đơn/trừ kho sang RPC).
+>    2. `database/migrations/2026-11_chat_logs_guard.sql` (bổ sung trường `guard_action`, `decision_id`, `audit_text` cho bảng `chat_logs`).
+>    3. `database/migrations/2026-11_product_reviews.sql` (tạo bảng `reviews` với RLS và ràng buộc chỉ khách hàng đã mua mới được đánh giá).
+>    4. `database/migrations/2026-11_seed_bench.sql` (khởi tạo bảng mapping và RPC phục vụ bộ dữ liệu đánh giá benchmark).
+> 5. **Khởi tạo dữ liệu Benchmark (Seed)**: Sau khi chạy đủ 4 migration, thực hiện seed dữ liệu benchmark theo hướng dẫn tại [SEED-BENCH.md](SEED-BENCH.md).
 
 ### 5.2 Dữ liệu Vector ChromaDB
 - ChromaDB đã được nạp sẵn dữ liệu vector của hơn 1.300 sản phẩm và bộ quy tắc chính sách tại thư mục: `database/chroma_db/`.

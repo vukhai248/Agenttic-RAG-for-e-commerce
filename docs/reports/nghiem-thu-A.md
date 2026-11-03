@@ -40,3 +40,10 @@ Chi tiết: `FOX-Guardrails/docs/plans/prompts/antigravity-phanA.md` (mục "Ngh
 - Migration `2026-11_payment_and_address.sql`: **Claude đã duyệt**. Chỉ chạy **sau khi merge frontend**, và phải sao lưu trước.
 - Merge thử: 2 xung đột nhỏ (`.gitignore`, `requests.md`).
 - Việc tiếp: Codex C1, C2 → A5-backend → A7. Anti G1 (RUN.md), G2 (kế hoạch QA).
+
+## Lần 5 — 03/11/2026 · Codex `2df89f9` + Anti `3b260ec`
+
+- Codex C1, C2: **Đạt**. A5-backend, A7: **Đạt phần code**. Codex tự làm thêm A3-backend (`/api/reviews`, `/health` thật): **chấp nhận**. Claude chạy lại: pytest 90, Node/PGlite 69/69, tsc OK.
+- 3 migration mới (`chat_logs_guard`, `product_reviews`, `seed_bench`): **Claude đã duyệt**. Thứ tự chạy theo `codex-HANDOFF-A.md` §4.
+- Anti G1, G2: **Chưa đạt**. Nhiều tên/giá trị đoán sai so với code (`payment_intent.succeeded`, `BENCH_RECORD=true`, `inventory_quantity`, `create_order_rpc`, tên tool). Trả lại dưới dạng H1 và H2.
+- Merge thử: 3 xung đột (`.gitignore`, `requests.md`, `rag-service/app/main.py` → giữ bản backend).

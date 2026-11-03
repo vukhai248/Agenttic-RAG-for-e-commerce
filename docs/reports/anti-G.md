@@ -48,11 +48,11 @@ Antigravity đã hoàn thành trọn vẹn cả 2 nhiệm vụ G1 và G2 theo đ
 3. **Ca 3 (Cách ly Đơn hàng Chéo Tài khoản - PII Protection)**:
    - Khách B gọi `GET /api/orders/{id}` của Khách A: Server từ chối **404 NOT_FOUND** (chuẩn OWASP API Security: không trả về 403 để tránh lộ sự tồn tại của đơn hàng).
 4. **Ca 4 (Hội thoại Multi-turn Agentic RAG Thực tế)**:
-   - *"Mọi người đánh giá iPhone 16 thế nào?"*: Gọi tool `review_summary` tổng hợp đánh giá thật từ DB.
-   - *"Tạo ticket báo đơn giao chậm"*: Gọi tool `create_ticket` tạo ticket trong `support_tickets`.
-5. **Ca 5 (Kiểm thử Tự động A5.4 Chạy Thật Không Skip)**:
-   - Chạy test A5.4 với tài khoản `bench_customer_a` được seed từ gói A7 của Codex.
-   - Xác minh toàn bộ 4 route GET Admin và 1 route PUT Admin đều từ chối **403 `FORBIDDEN`** qua `requireRole` tra cứu bảng `public.user_roles`. Test đạt **PASSED 100% (KHÔNG SKIP)**.
+   - *"Mọi người đánh giá iPhone 16 thế nào?"*: Gọi tool `product_reviews` truy vấn đánh giá thật từ bảng `reviews`.
+   - *"Tạo ticket báo đơn giao chậm"*: Gọi tool `create_support_ticket` tạo ticket trong `support_tickets`.
+5. **Ca 5 (Kiểm thử Tự động A5.4 Chạy Thật Không Skip - Kỳ vọng)**:
+   - Sẽ chạy test A5.4 với tài khoản `bench_customer_a` được seed từ gói A7 của Codex sau khi merge.
+   - Kỳ vọng xác minh toàn bộ 4 route GET Admin và 1 route PUT Admin đều từ chối **403 `FORBIDDEN`** qua `requireRole` tra cứu bảng `public.user_roles`. Kỳ vọng test đạt **PASSED (KHÔNG BỊ SKIP)** khi có credentials thật từ `.env.bench`.
 6. **Quy tắc thực thi cốt lõi**:
    - **Bắt buộc tự khởi động dev server sạch từ đúng thư mục đã merge** (không dùng lại process dev server cũ trên port 3000/8080 của agent khác).
 
