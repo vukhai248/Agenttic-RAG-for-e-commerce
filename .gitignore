@@ -22,6 +22,8 @@ playwright-report/
 test-results/
 web_ui/playwright-report/
 web_ui/test-results/
+web_ui/tests/e2e/screenshots/
+tests/e2e/screenshots/
 
 # Misc system files
 .DS_Store
