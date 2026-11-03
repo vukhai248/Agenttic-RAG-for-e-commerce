@@ -78,3 +78,10 @@ Chi tiết: `FOX-Guardrails/docs/plans/prompts/antigravity-phanA.md` (mục "Ngh
 - Claude thêm `2026-11_base_tables.sql` (migration 0): tạo 3 bảng theo `setup.sql`, không DROP. Siết quyền so với `setup.sql`: khách chỉ INSERT ticket `open`/`low`/`created_by ∈ {customer, agent}` gắn đơn của chính mình, chỉ UPDATE cột `note`; `user_roles`, `chat_logs` chỉ service_role.
 - Claude chạy chuỗi 0 → 5 trên bản khôi phục (container pgvector:pg17, giả lập quyền mặc định Supabase): **6/6 migration OK + 21/21 kiểm quyền OK**, migration 0 chạy lại lần 2 không lỗi.
 - Chưa chạy gì trên Supabase thật.
+
+## Lần 11 — 03/11/2026 · Codex chạy migration, seed, Stripe local (`7aec27a`, `f4e80d3`)
+
+- **Đạt.** Claude kiểm lại Supabase thật (chỉ đọc): 9 bảng public; `user_roles` 3 dòng (admin, customer, customer); `bench_cases` 2; orders 20 (18 cũ + 1 seed + 1 đơn thử hết hạn); reviews 11. Anon bị chặn (42501) ở `user_roles`, `chat_logs`, `support_tickets`, `bench_cases`, và INSERT trực tiếp `orders`. Đơn thử `c443cd06…` đúng `cancelled/failed`, không trừ kho.
+- Stripe: khoá trong `web_ui/.env.local` là `sk_test_`, không có khoá live, không có khoá trong git. Webhook đi qua Stripe CLI listener (local), đủ 3 event. Đã kiểm: hết hạn từ Stripe thật → DB, replay 2 lần, chữ ký sai → 400. **Chưa kiểm**: thanh toán thành công bằng thẻ test (checklist §5 mục 3) → Đợt 3.
+- Listener và Next.js phải bật lại theo `RUN.md` mỗi lần máy khởi động lại.
+- Phần A chỉ còn Đợt 3 (QA toàn web, Anti) và sửa lỗi QA (cả hai).
