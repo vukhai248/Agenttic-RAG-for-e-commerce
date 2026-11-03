@@ -108,7 +108,19 @@ const emptyForm: Product = {
   specs: {}, images: ['https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=600'], rating_avg: 5,
 };
 
-type ActivePanel = 'dashboard' | 'products' | 'orders' | 'users' | 'tickets';
+interface ChatLog {
+  id: string;
+  session_id: string;
+  user_id: string | null;
+  role: 'user' | 'agent' | 'tool' | 'system';
+  message: string;
+  tool_used?: string | null;
+  risk_level?: 'low' | 'medium' | 'high' | null;
+  guard_decision_ids?: string[] | null;
+  created_at: string;
+}
+
+type ActivePanel = 'dashboard' | 'products' | 'orders' | 'users' | 'tickets' | 'chat_logs';
 
 export default function AdminPage() {
   const [panel, setPanel] = useState<ActivePanel>('dashboard');
@@ -119,6 +131,12 @@ export default function AdminPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isUsersLoading, setIsUsersLoading] = useState(false);
   const [isTicketsLoading, setIsTicketsLoading] = useState(false);
+  const [chatLogs, setChatLogs] = useState<ChatLog[]>([]);
+  const [isChatLogsLoading, setIsChatLogsLoading] = useState(false);
+  const [selectedChatSession, setSelectedChatSession] = useState<string | null>(null);
+  const [selectedChatUser, setSelectedChatUser] = useState<string | null>(null);
+  const [chatLogFilterRisk, setChatLogFilterRisk] = useState<string>('all');
+  const [chatLogSearch, setChatLogSearch] = useState<string>('');
 
   // Search & Filters
   const [prodSearch, setProdSearch] = useState('');
@@ -224,18 +242,33 @@ export default function AdminPage() {
     setIsAdminChatLoading(true);
 
     try {
-      // Gửi request tới API chat admin
+      // Gửi request tới API chat admin kèm Access Token (J2)
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+
       const response = await fetch('/api/chat/admin', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {})
+        },
         body: JSON.stringify({
           message: userMsg,
           session_id: 'admin-session-' + Date.now()
         })
       });
 
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Lỗi kết nối AI Assistant');
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (data?.error?.code === 'ADMIN_ASSISTANT_UNAVAILABLE') {
+          throw new Error('Trợ lý admin chưa được kết nối.');
+        }
+        if (response.status === 401 || response.status === 403) {
+          throw new Error('Thiếu quyền quản trị viên hoặc nhân viên.');
+        }
+        const errorMsg = typeof data?.error === 'object' ? data.error.message : data?.error;
+        throw new Error(errorMsg || `Lỗi máy chủ (${response.status})`);
+      }
 
       // Thêm phản hồi của AI Assistant vào danh sách
       setAdminChatMessages(prev => [
@@ -247,13 +280,14 @@ export default function AdminPage() {
           sources: data.sources
         }
       ]);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Lỗi chat AI Admin:', err);
+      const errMsg = err instanceof Error ? err.message : 'Lỗi kết nối với Trợ lý AI Admin.';
       setAdminChatMessages(prev => [
         ...prev,
         {
           role: 'assistant',
-          content: 'Lỗi: Không thể kết nối với Trợ lý AI Admin. Vui lòng kiểm tra lại kết nối mạng hoặc máy chủ API.'
+          content: errMsg
         }
       ]);
     } finally {
@@ -348,16 +382,25 @@ export default function AdminPage() {
     const checkAdminRoleAndLoadData = async () => {
       setIsLoading(true);
 
+      const isMockAdminAllowed = process.env.NEXT_PUBLIC_ALLOW_MOCK_ADMIN === 'true';
+
       if (!isSupabaseConfigured) {
         setIsAdmin(true);
-        setProducts(FALLBACK_PRODUCTS);
-        setOrders(MOCK_ORDERS);
-        setTickets(MOCK_TICKETS);
-        setUsers([
-          { id: '1', email: 'admin.demo@example.com', user_metadata: { full_name: 'Quản Trị Viên', role: 'admin' }, created_at: '2026-07-04' },
-          { id: '2', email: 'nhanvien.test@gmail.com', user_metadata: { full_name: 'Nguyễn Văn Staff', role: 'staff' }, created_at: '2026-07-01' },
-          { id: '3', email: 'khachhang.test@gmail.com', user_metadata: { full_name: 'Trần Thị Customer' }, created_at: '2026-07-02' }
-        ]);
+        if (isMockAdminAllowed) {
+          setProducts(FALLBACK_PRODUCTS);
+          setOrders(MOCK_ORDERS);
+          setTickets(MOCK_TICKETS);
+          setUsers([
+            { id: '1', email: 'admin.demo@example.com', user_metadata: { full_name: 'Quản Trị Viên', role: 'admin' }, created_at: '2026-07-04' },
+            { id: '2', email: 'nhanvien.test@gmail.com', user_metadata: { full_name: 'Nguyễn Văn Staff', role: 'staff' }, created_at: '2026-07-01' },
+            { id: '3', email: 'khachhang.test@gmail.com', user_metadata: { full_name: 'Trần Thị Customer' }, created_at: '2026-07-02' }
+          ]);
+        } else {
+          setProducts([]);
+          setOrders([]);
+          setTickets([]);
+          setUsers([]);
+        }
         setIsLoading(false);
         return;
       }
@@ -426,7 +469,7 @@ export default function AdminPage() {
             };
           }));
         } else {
-          setProducts(FALLBACK_PRODUCTS);
+          setProducts(isMockAdminAllowed ? FALLBACK_PRODUCTS : []);
         }
 
         // Load Orders & Support Tickets qua Server API Route để lấy toàn bộ dữ liệu (không bị RLS client giới hạn)
@@ -448,30 +491,30 @@ export default function AdminPage() {
               const ordJson = await ordersRes.json();
               setOrders(ordJson.orders || []);
             } else {
-              setOrders(MOCK_ORDERS);
+              setOrders(isMockAdminAllowed ? MOCK_ORDERS : []);
             }
 
             if (ticketsRes.ok) {
               const tickJson = await ticketsRes.json();
               setTickets(tickJson.tickets || []);
             } else {
-              setTickets(MOCK_TICKETS);
+              setTickets(isMockAdminAllowed ? MOCK_TICKETS : []);
             }
           } else {
-            setOrders(MOCK_ORDERS);
-            setTickets(MOCK_TICKETS);
+            setOrders(isMockAdminAllowed ? MOCK_ORDERS : []);
+            setTickets(isMockAdminAllowed ? MOCK_TICKETS : []);
           }
         } catch (dataErr) {
           console.error('Lỗi khi fetch orders/tickets qua API:', dataErr);
-          setOrders(MOCK_ORDERS);
-          setTickets(MOCK_TICKETS);
+          setOrders(isMockAdminAllowed ? MOCK_ORDERS : []);
+          setTickets(isMockAdminAllowed ? MOCK_TICKETS : []);
         }
 
       } catch (err) {
         console.error('Lỗi khi tải dữ liệu admin:', err);
-        setProducts(FALLBACK_PRODUCTS);
-        setOrders(MOCK_ORDERS);
-        setTickets(MOCK_TICKETS);
+        setProducts(isMockAdminAllowed ? FALLBACK_PRODUCTS : []);
+        setOrders(isMockAdminAllowed ? MOCK_ORDERS : []);
+        setTickets(isMockAdminAllowed ? MOCK_TICKETS : []);
         setIsAdmin(true);
       } finally {
         setIsLoading(false);
@@ -480,6 +523,37 @@ export default function AdminPage() {
 
     checkAdminRoleAndLoadData();
   }, [router]);
+
+  // Load Chat Logs qua Server API Route
+  const fetchChatLogs = async () => {
+    setIsChatLogsLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) return;
+
+      const res = await fetch('/api/admin/chat-logs', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setChatLogs(data.chat_logs || []);
+      } else {
+        setChatLogs([]);
+      }
+    } catch (err) {
+      console.error('Lỗi khi fetch chat_logs:', err);
+      setChatLogs([]);
+    } finally {
+      setIsChatLogsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (panel === 'chat_logs') {
+      fetchChatLogs();
+    }
+  }, [panel]);
 
   // Load Users qua API Route (phải truyền token xác thực)
   const fetchUsersList = async () => {
@@ -1633,6 +1707,16 @@ export default function AdminPage() {
             <LifeBuoy className="w-4 h-4" />
             <span>Hỗ trợ khách hàng ({tickets.filter(t => t.status !== 'resolved').length})</span>
           </button>
+
+          <button
+            onClick={() => setPanel('chat_logs')}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all font-medium cursor-pointer ${panel === 'chat_logs' ? 'bg-primary text-primary-foreground font-bold shadow-md shadow-primary/15' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              }`}
+            data-testid="admin-nav-chat-logs"
+          >
+            <MessageSquare className="w-4 h-4" />
+            <span>Hội thoại ({chatLogs.length})</span>
+          </button>
         </nav>
 
         <div className="pt-4 border-t border-border text-center">
@@ -1652,6 +1736,7 @@ export default function AdminPage() {
           <button onClick={() => setPanel('orders')} className={`px-3.5 py-2 rounded-xl whitespace-nowrap ${panel === 'orders' ? 'bg-primary text-primary-foreground font-bold' : 'bg-card border border-border text-muted-foreground'}`}>Đơn hàng</button>
           <button onClick={() => setPanel('users')} className={`px-3.5 py-2 rounded-xl whitespace-nowrap ${panel === 'users' ? 'bg-primary text-primary-foreground font-bold' : 'bg-card border border-border text-muted-foreground'}`}>Thành viên</button>
           <button onClick={() => setPanel('tickets')} className={`px-3.5 py-2 rounded-xl whitespace-nowrap ${panel === 'tickets' ? 'bg-primary text-primary-foreground font-bold' : 'bg-card border border-border text-muted-foreground'}`}>Hỗ trợ</button>
+          <button onClick={() => setPanel('chat_logs')} className={`px-3.5 py-2 rounded-xl whitespace-nowrap ${panel === 'chat_logs' ? 'bg-primary text-primary-foreground font-bold' : 'bg-card border border-border text-muted-foreground'}`} data-testid="mobile-nav-chat-logs">Hội thoại</button>
         </div>
 
         {/* ========================================== */}
@@ -4418,6 +4503,311 @@ export default function AdminPage() {
                 )}
               </div>
 
+            </div>
+          </div>
+        )}
+
+        {/* ========================================== */}
+        {/* PANEL: NHẬT KÝ HỘI THOẠI (CHAT LOGS - A5) */}
+        {/* ========================================== */}
+        {panel === 'chat_logs' && (
+          <div className="space-y-4" data-testid="panel-chat-logs">
+            <div className="border-b border-border pb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <div>
+                <h1 className="text-xl sm:text-2xl font-black text-foreground flex items-center gap-2">
+                  <span>Nhật ký hội thoại AI</span>
+                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-primary/10 text-primary font-bold">
+                    {chatLogs.length} bản ghi
+                  </span>
+                </h1>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Giám sát các phiên trò chuyện, phát hiện rủi ro và các can thiệp an ninh của FOX-Guardrails
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={fetchChatLogs}
+                  disabled={isChatLogsLoading}
+                  className="flex items-center gap-1.5 h-9 px-3 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground transition-colors cursor-pointer disabled:opacity-50"
+                  data-testid="refresh-chat-logs-btn"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isChatLogsLoading ? 'animate-spin' : ''}`} />
+                  <span>Làm mới</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Tìm kiếm & Lọc rủi ro */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Tìm theo Session ID, nội dung tin nhắn hoặc User ID..."
+                  value={chatLogSearch}
+                  onChange={(e) => setChatLogSearch(e.target.value)}
+                  className="w-full h-10 pl-9 pr-3 rounded-xl border border-border bg-card text-foreground text-xs focus:outline-none focus:border-primary"
+                  data-testid="chat-log-search-input"
+                />
+              </div>
+
+              <select
+                value={chatLogFilterRisk}
+                onChange={(e) => setChatLogFilterRisk(e.target.value)}
+                className="h-10 px-3 rounded-xl border border-border bg-card text-foreground text-xs focus:outline-none cursor-pointer"
+                data-testid="chat-log-risk-filter"
+              >
+                <option value="all">Tất cả mức độ rủi ro</option>
+                <option value="high">🔴 Nguy cơ cao (High)</option>
+                <option value="medium">🟡 Trung bình (Medium)</option>
+                <option value="low">🟢 Thấp (Low)</option>
+              </select>
+            </div>
+
+            {/* Grid 2 cột: Bảng danh sách nhật ký & Luồng hội thoại phiên */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+              {/* CỘT TRÁI: DANH SÁCH BẢN GHI LOGS */}
+              <div className="lg:col-span-2 rounded-2xl border border-border overflow-hidden overflow-x-auto bg-card/10">
+                {isChatLogsLoading ? (
+                  <div className="p-12 flex flex-col items-center justify-center gap-2 text-muted-foreground text-xs">
+                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                    <span>Đang tải nhật ký hội thoại từ máy chủ...</span>
+                  </div>
+                ) : (() => {
+                  const filteredLogs = chatLogs.filter((log) => {
+                    const matchRisk = chatLogFilterRisk === 'all' || log.risk_level === chatLogFilterRisk;
+                    const searchLower = chatLogSearch.trim().toLowerCase();
+                    const matchSearch =
+                      !searchLower ||
+                      (log.session_id && log.session_id.toLowerCase().includes(searchLower)) ||
+                      (log.message && log.message.toLowerCase().includes(searchLower)) ||
+                      (log.user_id && log.user_id.toLowerCase().includes(searchLower)) ||
+                      (log.tool_used && log.tool_used.toLowerCase().includes(searchLower));
+                    return matchRisk && matchSearch;
+                  });
+
+                  if (filteredLogs.length === 0) {
+                    return (
+                      <div className="p-12 text-center text-muted-foreground text-xs space-y-1">
+                        <MessageSquare className="w-8 h-8 opacity-30 mx-auto text-primary" />
+                        <p className="font-semibold">Không tìm thấy bản ghi hội thoại nào</p>
+                        <p className="text-[11px] opacity-75">
+                          {chatLogs.length === 0
+                            ? 'Chưa có lượt trò chuyện nào được lưu trong hệ thống.'
+                            : 'Không có bản ghi phù hợp với điều kiện tìm kiếm hoặc bộ lọc.'}
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <table className="w-full text-sm min-w-[600px]" data-testid="chat-logs-table">
+                      <thead className="bg-muted/50 text-muted-foreground text-xs uppercase">
+                        <tr>
+                          <th className="text-left font-semibold px-4 py-3">Phiên (Session ID)</th>
+                          <th className="text-left font-semibold px-4 py-3">Vai trò</th>
+                          <th className="text-left font-semibold px-4 py-3">Nội dung</th>
+                          <th className="text-left font-semibold px-4 py-3">Công cụ & Rủi ro</th>
+                          <th className="text-right font-semibold px-4 py-3">Thời gian</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border text-xs">
+                        {filteredLogs.map((log) => {
+                          const logUserKey = log.user_id || 'anonymous';
+                          const isSelected = selectedChatSession === log.session_id && selectedChatUser === logUserKey;
+                          return (
+                            <tr
+                              key={log.id}
+                              onClick={() => {
+                                setSelectedChatSession(log.session_id);
+                                setSelectedChatUser(logUserKey);
+                              }}
+                              className={`hover:bg-muted/30 transition-colors cursor-pointer ${
+                                isSelected ? 'bg-primary/10 border-l-2 border-l-primary' : ''
+                              }`}
+                              data-testid={`chat-log-row-${log.id}`}
+                            >
+                              <td className="px-4 py-3">
+                                <span
+                                  className="font-mono text-[11px] text-primary hover:underline"
+                                  title={log.session_id}
+                                >
+                                  {log.session_id ? log.session_id.substring(0, 8) + '...' : 'N/A'}
+                                </span>
+                                {log.user_id && (
+                                  <span className="block text-[10px] text-muted-foreground">
+                                    User: {log.user_id.substring(0, 6)}...
+                                  </span>
+                                )}
+                              </td>
+
+                              <td className="px-4 py-3">
+                                <span
+                                  className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                    log.role === 'user'
+                                      ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                                      : log.role === 'agent'
+                                      ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400'
+                                      : log.role === 'tool'
+                                      ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                                      : 'bg-muted text-muted-foreground'
+                                  }`}
+                                >
+                                  {log.role}
+                                </span>
+                              </td>
+
+                              <td className="px-4 py-3 max-w-[240px]">
+                                <p className="line-clamp-2 text-foreground font-normal leading-relaxed">
+                                  {log.message}
+                                </p>
+                                {log.guard_decision_ids && log.guard_decision_ids.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 mt-1">
+                                    {log.guard_decision_ids.map((decId, i) => (
+                                      <span
+                                        key={i}
+                                        className="text-[10px] px-1.5 py-0.2 rounded bg-destructive/10 text-destructive font-mono"
+                                        title={`Mã quyết định can thiệp Guardrail: ${decId}`}
+                                      >
+                                        🛡️ {decId}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </td>
+
+                              <td className="px-4 py-3 space-y-1">
+                                {log.tool_used && (
+                                  <span className="inline-block px-1.5 py-0.5 rounded bg-muted text-[10px] text-muted-foreground font-mono">
+                                    🔧 {log.tool_used}
+                                  </span>
+                                )}
+                                <div>
+                                  <span
+                                    className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                                      log.risk_level === 'high'
+                                        ? 'bg-destructive/10 text-destructive'
+                                        : log.risk_level === 'medium'
+                                        ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                                        : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                                    }`}
+                                  >
+                                    {log.risk_level ? `Rủi ro: ${log.risk_level}` : 'Rủi ro: thấp'}
+                                  </span>
+                                </div>
+                              </td>
+
+                              <td className="px-4 py-3 text-right text-muted-foreground text-[11px] whitespace-nowrap">
+                                {new Date(log.created_at).toLocaleString('vi-VN', {
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  );
+                })()}
+              </div>
+
+              {/* CỘT PHẢI: CHI TIẾT PHIÊN HỘI THOẠI (SESSION CONVERSATION FLOW) */}
+              <div className="rounded-2xl border border-border bg-card p-4 space-y-3 sticky top-6 shadow-sm">
+                <div className="flex justify-between items-center border-b border-border pb-2.5">
+                  <div>
+                    <h3 className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                      <MessageSquare className="w-3.5 h-3.5 text-primary" />
+                      <span>Chi tiết phiên hội thoại</span>
+                    </h3>
+                    <p className="text-[10px] text-muted-foreground">
+                      {selectedChatSession ? `Session: ${selectedChatSession}` : 'Chưa chọn phiên'}
+                      {selectedChatUser && selectedChatUser !== 'anonymous' && (
+                        <span className="block text-[10px] text-primary">User: {selectedChatUser}</span>
+                      )}
+                    </p>
+                  </div>
+
+                  {selectedChatSession && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedChatSession(null);
+                        setSelectedChatUser(null);
+                      }}
+                      className="text-[10px] text-muted-foreground hover:text-foreground cursor-pointer"
+                    >
+                      Đóng
+                    </button>
+                  )}
+                </div>
+
+                {selectedChatSession ? (() => {
+                  const sessionLogs = chatLogs
+                    .filter((l) => {
+                      return l.session_id === selectedChatSession && (l.user_id ?? 'anonymous') === selectedChatUser;
+                    })
+                    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+                  return (
+                    <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1 text-xs">
+                      {sessionLogs.map((item) => (
+                        <div
+                          key={item.id}
+                          className={`p-2.5 rounded-xl border ${
+                            item.role === 'user'
+                              ? 'bg-primary/5 border-primary/20 mr-4'
+                              : item.role === 'agent'
+                              ? 'bg-muted/40 border-border ml-4'
+                              : 'bg-amber-500/5 border-amber-500/20 text-[11px]'
+                          }`}
+                        >
+                          <div className="flex justify-between items-center mb-1 text-[10px] text-muted-foreground font-semibold">
+                            <span className="uppercase">
+                              {item.role === 'user' ? 'Khách hàng' : item.role === 'agent' ? 'Trợ lý AI' : item.role}
+                            </span>
+                            <span>
+                              {new Date(item.created_at).toLocaleTimeString('vi-VN', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                second: '2-digit',
+                              })}
+                            </span>
+                          </div>
+
+                          <p className="whitespace-pre-wrap leading-relaxed text-foreground">
+                            {item.message}
+                          </p>
+
+                          {item.tool_used && (
+                            <div className="mt-1.5 pt-1.5 border-t border-border/50 text-[10px] text-muted-foreground font-mono">
+                              🔧 Tool: {item.tool_used}
+                            </div>
+                          )}
+
+                          {item.guard_decision_ids && item.guard_decision_ids.length > 0 && (
+                            <div className="mt-1 flex items-center gap-1 text-[10px] text-destructive font-mono">
+                              🛡️ Guardrail Action: {item.guard_decision_ids.join(', ')}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })() : (
+                  <div className="py-12 text-center text-muted-foreground text-xs space-y-1">
+                    <Info className="w-6 h-6 opacity-40 mx-auto text-primary" />
+                    <p className="font-medium">Chưa chọn phiên hội thoại</p>
+                    <p className="text-[11px] opacity-75 max-w-[200px] mx-auto">
+                      Bấm vào bất kỳ dòng nào ở bảng bên trái để xem đầy đủ chuỗi trao đổi của phiên đó.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

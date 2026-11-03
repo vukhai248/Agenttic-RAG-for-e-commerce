@@ -60,3 +60,71 @@ Ngày: 03/11/2026. Nhánh `feat/a-backend`.
 - K4: trước khi có dataset C, sau migrate có thể seed `scripts/fixtures/seed_bench.sample.jsonl --products-from-db` để tự chọn product ID thật và tạo tài khoản A5.4. Dry-run không query catalog. Lỗi miền email báo SEED_EMAIL_ADDRESS_INVALID_CONTACT_CLAUDE; dừng, không đổi domain.
 - Test Node/PGlite nên dùng `--v8-pool-size=1 --test-concurrency=1` trên máy8GB để tránh V8 OOM khi nhiều engine khởi tạo song song; không bỏ test nào.
 - Báo cáo canonical đợt này `docs/reports/codex-K.md`. Đợt3 chỉ sau merge/migration/seed và có bugs.md backend trên nhánh Claude chỉ định.
+
+---
+
+<!-- Phần dưới: ghi từ nhánh feat/a-frontend (Antigravity) -->
+
+# Yêu cầu & Bàn giao giữa các Tầng (Requests & Handoffs)
+
+Tài liệu ghi nhận các thay đổi dùng chung hoặc các module xuyên suốt giữa Antigravity (Tầng 3 — Frontend & QA) và Codex (Tầng 2 — Backend & Tool).
+
+---
+
+## 1. Module Xác thực Phân quyền Quản trị: `web_ui/src/lib/server/auth.ts`
+- **Người tạo**: Antigravity (theo chỉ dẫn của Claude Opus để khắc phục lỗ hổng F2 leo quyền Admin).
+- **Mục đích**: Cung cấp hàm `requireRole(request, allowedRoles)` dùng Service Role Client truy vấn trực tiếp bảng **`public.user_roles`** (nguồn thẩm quyền duy nhất theo `database/setup.sql:108-113`), loại bỏ hoàn toàn việc đọc `user_metadata.role` (do client có thể tự sửa đổi).
+- **Phạm vi sử dụng**:
+  - `web_ui/src/app/api/admin/chat-logs/route.ts`
+  - `web_ui/src/app/api/admin/orders/route.ts`
+  - `web_ui/src/app/api/admin/tickets/route.ts`
+  - `web_ui/src/app/api/admin/users/route.ts` (khi đổi vai trò, API thực hiện upsert vào bảng `user_roles`).
+- **Ghi chú cho Codex**: Khi Codex phát triển thêm các API quản trị nội bộ hoặc đồng bộ database, vui lòng sử dụng trực tiếp module `requireRole` này để đảm bảo nhất quán và an toàn phân quyền.
+
+---
+
+## 2. Đặc tả Hợp đồng API Route `GET /api/admin/chat-logs`
+- **Query Parameters**:
+  - `session_id` hoặc `sessionId`: Lọc theo ID phiên trò chuyện.
+  - `risk_level` hoặc `riskLevel`: Lọc theo mức độ rủi ro (`high`, `medium`, `low`).
+  - `role`: Lọc theo vai trò (`user`, `agent`, `tool`, `system`).
+  - `limit`: Số bản ghi tối đa (mặc định 100, tối đa 500).
+  - `offset`: Vị trí bắt đầu phân trang (mặc định 0).
+- **Định dạng Response thành công (200 OK)**:
+  ```json
+  {
+    "chat_logs": [
+      {
+        "id": "uuid",
+        "session_id": "string",
+        "user_id": "uuid | null",
+        "role": "user | agent | tool | system",
+        "message": "string",
+        "tool_used": "string | null",
+        "risk_level": "low | medium | high | null",
+        "guard_decision_ids": ["string"],
+        "created_at": "ISO-8601 string"
+      }
+    ],
+    "total": 100,
+    "limit": 100,
+    "offset": 0
+  }
+  ```
+- **Định dạng Response lỗi**:
+  - `401`: `{"error": {"code": "UNAUTHENTICATED", "message": "..."}}`
+  - `403`: `{"error": {"code": "FORBIDDEN", "message": "..."}}`
+  - `500`: `{"error": {"code": "INTERNAL_ERROR", "message": "..."}}`
+
+---
+
+## 3. Cấu hình Tài khoản Benchmark `bench_customer_a` cho E2E Test (F5)
+- **Người gửi**: Antigravity (Tầng 3 — Frontend & QA)
+- **Người nhận**: Codex (Tầng 2 — Backend & Tool)
+- **Nội dung**: Để bộ test E2E Playwright (`tests/e2e/a5_ui.spec.ts: A5.4`) có thể thực hiện kiểm thử tự động hành vi chống leo quyền (Privilege Escalation Prevention) trên API server thật mà không mock:
+  - Khi Codex tạo tài khoản mẫu benchmark theo đặc tả `A-hoan-thien-web.md` (dòng 107), vui lòng cấu hình hai biến môi trường vào file `.env.bench`:
+    ```env
+    BENCH_CUSTOMER_EMAIL=customer_test@example.com
+    BENCH_CUSTOMER_PASSWORD=your_secure_password
+    ```
+  - Test A5.4 đã sẵn sàng cơ chế tự động đọc hai biến này từ `.env.bench` để đăng nhập thật, giả lập người dùng tự sửa `user_metadata.role='admin'`, gọi thật 4 API Admin GET và 1 API Admin PUT để xác minh server từ chối 403 `FORBIDDEN` qua `requireRole`. Khi chưa có `.env.bench`, test tự động `skip` với thông báo rõ ràng.

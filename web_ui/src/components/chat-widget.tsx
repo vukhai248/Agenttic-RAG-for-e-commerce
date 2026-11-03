@@ -1,16 +1,24 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { MessageSquare, X, Send, Bot, User, Loader2, AlertCircle, Plus, ChevronLeft, CheckCircle2, Clock } from 'lucide-react';
+import { MessageSquare, X, Send, Bot, User, Loader2, AlertCircle, Plus, ChevronLeft } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import Markdown from 'markdown-to-jsx';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+
+interface GuardInfo {
+  action: 'allow' | 'block' | 'review' | 'flag' | string;
+  decision_id?: string | null;
+  flags?: string[];
+}
 
 interface ChatMessage {
   id: string;
   role: 'user' | 'agent';
   message: string;
   created_at: Date;
+  guard?: GuardInfo;
 }
 
 interface TicketMessage {
@@ -32,9 +40,128 @@ interface SupportTicket {
   created_at: string;
 }
 
-// Helper lấy key lưu trữ theo trạng thái đăng nhập và vai trò admin
+// ─────────────────────────────────────────────────────────────────────────────
+// CƠ CHẾ RENDER AN TOÀN TRONG CHAT (A6 / H11)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Kiểm tra cờ NEXT_PUBLIC_SAFE_RENDER (mặc định bật true, chỉ tắt khi rõ ràng = 'false')
+const isSafeRenderActive = (): boolean => {
+  return process.env.NEXT_PUBLIC_SAFE_RENDER !== 'false';
+};
+
+// Lấy danh sách allowlist domain cho liên kết và hình ảnh
+const getLinkAllowlist = (): string[] => {
+  const envAllowlist = process.env.NEXT_PUBLIC_LINK_ALLOWLIST
+    ? process.env.NEXT_PUBLIC_LINK_ALLOWLIST.split(',').map((d) => d.trim().toLowerCase())
+    : [];
+
+  const defaultAllowlist = [
+    'localhost',
+    '127.0.0.1',
+    'cellphones.com.vn',
+    'images.unsplash.com',
+  ];
+
+  if (typeof window !== 'undefined' && window.location.hostname) {
+    defaultAllowlist.push(window.location.hostname.toLowerCase());
+  }
+
+  return Array.from(new Set([...defaultAllowlist, ...envAllowlist].filter(Boolean)));
+};
+
+// Kiểm tra tính an toàn của URL (hỗ trợ kiểm tra Homoglyph Punycode và chặn triệt để protocol-relative bypass)
+const checkUrlSafety = (
+  urlString: string
+): { safe: boolean; isInternal: boolean; hostname: string; isHomoglyph: boolean } => {
+  if (!urlString || typeof urlString !== 'string') {
+    return { safe: false, isInternal: false, hostname: '', isHomoglyph: false };
+  }
+
+  const trimmed = urlString.trim();
+  const lower = trimmed.toLowerCase();
+
+  // 1. Chặn ngay các scheme nguy hiểm, bypass backslash (thô hoặc url-encode %5c) và protocol-relative
+  if (
+    lower.startsWith('javascript:') ||
+    lower.startsWith('data:') ||
+    lower.startsWith('vbscript:') ||
+    trimmed.startsWith('//') ||
+    trimmed.includes('\\') ||
+    lower.includes('%5c') ||
+    lower.startsWith('//')
+  ) {
+    return { safe: false, isInternal: false, hostname: '', isHomoglyph: false };
+  }
+
+  // 2. Fragment link nội bộ thuần túy (#id)
+  if (trimmed.startsWith('#')) {
+    return { safe: true, isInternal: true, hostname: '', isHomoglyph: false };
+  }
+
+  // 3. Parse bằng new URL với base origin của trang web hiện tại
+  try {
+    const baseOrigin = typeof window !== 'undefined' && window.location.origin
+      ? window.location.origin
+      : 'http://localhost:3000';
+
+    const parsed = new URL(trimmed, baseOrigin);
+
+    // Chỉ cho phép giao thức http: và https:
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return { safe: false, isInternal: false, hostname: '', isHomoglyph: false };
+    }
+
+    // 4. Kiểm tra Link nội bộ:
+    // Phải có origin trùng khớp với baseOrigin VÀ input gốc bắt đầu bằng đúng 1 dấu '/'
+    // Đồng thời pathname không được chứa ký tự backslash lẩn tránh
+    const isInternal =
+      parsed.origin === baseOrigin &&
+      trimmed.startsWith('/') &&
+      !trimmed.startsWith('//') &&
+      !trimmed.includes('\\') &&
+      !lower.includes('%5c');
+
+    if (isInternal) {
+      return { safe: true, isInternal: true, hostname: parsed.hostname.toLowerCase(), isHomoglyph: false };
+    }
+
+    // 5. Kiểm tra Link ngoài:
+    // Trình duyệt tự động chuyển đổi Unicode IDN sang Punycode (VD: Cyrillic 'аmazon.com' -> 'xn--mazon-1qa.com')
+    const hostname = parsed.hostname.toLowerCase();
+    const isHomoglyph = hostname.startsWith('xn--') || hostname.includes('.xn--');
+
+    const allowlist = getLinkAllowlist();
+    const isDomainAllowed = allowlist.some(
+      (allowed) => hostname === allowed || hostname.endsWith('.' + allowed)
+    );
+
+    return {
+      safe: isDomainAllowed && !isHomoglyph,
+      isInternal: false,
+      hostname,
+      isHomoglyph,
+    };
+  } catch {
+    return { safe: false, isInternal: false, hostname: '', isHomoglyph: false };
+  }
+};
+
+// Component render Link an toàn
 const SafeMarkdownLink = ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => {
-  const isInternal = href?.startsWith('/') || href?.startsWith('#');
+  const isSafe = isSafeRenderActive();
+
+  // Khi cờ tắt: render link mặc định (phục vụ thực nghiệm đo baseline G0)
+  if (!isSafe) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline" {...props}>
+        {children}
+      </a>
+    );
+  }
+
+  const { safe, isInternal, isHomoglyph } = checkUrlSafety(href || '');
+
+  // 1. Link nội bộ an toàn
   if (isInternal) {
     return (
       <Link href={href || '#'} className="text-primary font-medium underline hover:opacity-80 transition-opacity" {...props}>
@@ -42,21 +169,86 @@ const SafeMarkdownLink = ({ href, children, ...props }: React.AnchorHTMLAttribut
       </Link>
     );
   }
-  // Liên kết ngoài: bảo vệ chống clickjacking / phishing lừa đảo
+
+  // 2. Link ngoài thuộc Allowlist an toàn
+  if (safe) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer nofollow"
+        className="text-primary font-medium underline hover:opacity-80 transition-opacity"
+        {...props}
+      >
+        {children}
+      </a>
+    );
+  }
+
+  // 3. Link ngoài không thuộc Allowlist hoặc Homoglyph: Vô hiệu hóa click, hiển thị cảnh báo
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer nofollow"
-      className="inline-flex items-center gap-1 text-destructive font-medium underline hover:opacity-80 transition-opacity"
-      title="Cảnh báo an toàn: Đây là liên kết dẫn ra ngoài website của cửa hàng"
-      {...props}
+    <span
+      className="inline-flex items-center gap-1 text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded text-xs border border-border/60"
+      title={isHomoglyph ? 'Cảnh báo bảo mật: Phát hiện ký tự giả mạo tên miền (Homoglyph Attack)' : 'Cảnh báo bảo mật: Liên kết ngoài chưa được xác thực'}
     >
-      <span>{children}</span>
-      <span className="text-[9px] px-1 py-0.5 rounded bg-muted text-muted-foreground border border-border font-normal">ngoài</span>
-    </a>
+      <span className="line-through opacity-75">{children || href}</span>
+      <span className="text-[10px] text-destructive font-bold">
+        {isHomoglyph ? '(tên miền giả mạo đã bị chặn)' : '(liên kết ngoài đã bị chặn)'}
+      </span>
+    </span>
   );
 };
+
+// Component render Ảnh an toàn
+const SafeMarkdownImage = ({ src, alt, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) => {
+  const isSafe = isSafeRenderActive();
+
+  if (!isSafe) {
+    return <img src={src} alt={alt || 'Hình ảnh'} {...props} />;
+  }
+
+  const srcString = typeof src === 'string' ? src : '';
+  const { safe, isInternal } = checkUrlSafety(srcString);
+
+  if (safe || isInternal) {
+    return (
+      <img
+        src={src}
+        alt={alt || 'Hình ảnh'}
+        className="max-w-full rounded-xl border border-border my-2 object-cover"
+        loading="lazy"
+        {...props}
+      />
+    );
+  }
+
+  // Ảnh ngoài không thuộc Allowlist: Bị ẩn và chỉ hiển thị alt text
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-muted/80 text-muted-foreground border border-border text-xs italic my-1.5 select-none"
+      title="Ảnh từ máy chủ ngoài chưa xác thực đã bị ẩn để bảo vệ quyền riêng tư"
+    >
+      <span>🖼️ [Ảnh ngoài đã bị ẩn: <strong>{alt || 'Hình ảnh'}</strong>]</span>
+    </span>
+  );
+};
+// Helper sinh UUID v4 chuẩn RFC 4122 (H1)
+const generateUUID = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
+// Kiểm tra định dạng UUID v4 hợp lệ
+const isValidUUID = (str: string): boolean => {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+};
+
 const getStorageKeys = (isAdmin: boolean, uid: string) => {
   const userSuffix = uid ? `_${uid}` : '_guest';
   return {
@@ -65,21 +257,18 @@ const getStorageKeys = (isAdmin: boolean, uid: string) => {
   };
 };
 
+interface UserOrderSummary {
+  id: string;
+  total: number;
+}
+
 export default function ChatWidget() {
-  const [isOpen, setIsOpen] = useState(false);
-  const [pathname, setPathname] = useState('');
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const path = window.location.pathname;
-      setPathname(path);
-      if (path.startsWith('/admin')) {
-        setChatMode('bot');
-      }
-    }
-  }, [isOpen]);
-
+  const currentPathname = usePathname() || '';
+  const pathname = currentPathname;
   const isAdminPage = pathname.startsWith('/admin');
+
+  const [isOpen, setIsOpen] = useState(false);
+  const [chatMode, setChatMode] = useState<'bot' | 'staff'>('bot');
   
   // AI Chatbot States
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -87,12 +276,17 @@ export default function ChatWidget() {
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState('');
   const [userToken, setUserToken] = useState<string | null>(null);
-
-  // Phân hệ chat: AI Chatbot ('bot') hoặc Gửi hỗ trợ cho Nhân viên ('staff')
-  const [chatMode, setChatMode] = useState<'bot' | 'staff'>('bot');
   
   // States cho Staff Support (Gặp nhân viên)
-  const [userOrders, setUserOrders] = useState<any[]>([]);
+  const [userOrders, setUserOrders] = useState<UserOrderSummary[]>([]);
+
+  useEffect(() => {
+    if (isAdminPage) {
+      setTimeout(() => {
+        setChatMode('bot');
+      }, 0);
+    }
+  }, [isAdminPage, isOpen]);
   const [userEmail, setUserEmail] = useState<string>('');
   const [userId, setUserId] = useState<string>('');
   
@@ -177,37 +371,42 @@ export default function ChatWidget() {
     const { sessionKey, historyKey } = getStorageKeys(isCurrentAdmin, userId);
     
     let storedSession = localStorage.getItem(sessionKey);
-    if (!storedSession) {
-      storedSession = (isCurrentAdmin ? 'admin_sess_' : 'sess_') + Math.random().toString(36).substring(2, 15);
+    // Chuẩn hóa H1: Đảm bảo session_id luôn là UUID v4 RFC 4122 hợp lệ theo user
+    if (!storedSession || !isValidUUID(storedSession)) {
+      storedSession = generateUUID();
       localStorage.setItem(sessionKey, storedSession);
     }
-    setSessionId(storedSession);
-
+    const nextSessionId = storedSession;
     const storedHistory = localStorage.getItem(historyKey);
-    if (storedHistory) {
-      try {
-        const parsed = JSON.parse(storedHistory);
-        setMessages(
-          parsed.map((m: any) => ({
-            ...m,
-            created_at: new Date(m.created_at),
-          }))
-        );
-      } catch (e) {
-        console.error('Không thể phục hồi lịch sử chat:', e);
+
+    setTimeout(() => {
+      setSessionId(nextSessionId);
+
+      if (storedHistory) {
+        try {
+          const parsed = JSON.parse(storedHistory);
+          setMessages(
+            parsed.map((m: ChatMessage) => ({
+              ...m,
+              created_at: new Date(m.created_at),
+            }))
+          );
+        } catch (e) {
+          console.error('Không thể phục hồi lịch sử chat:', e);
+        }
+      } else {
+        setMessages([
+          {
+            id: 'welcome',
+            role: 'agent',
+            message: isCurrentAdmin
+              ? 'Xin chào Admin! Tôi là Trợ lý AI Nội bộ (Admin Assistant) hỗ trợ quản trị hệ thống. Tôi có thể giúp gì cho bạn hôm nay? (Ví dụ: tra cứu doanh thu, chính sách hoàn tiền, hoặc quy trình xử lý ticket)'
+              : 'Xin chào! Mình có thể giúp gì cho bạn về sản phẩm, đơn hàng hoặc chính sách đổi trả/bảo hành?',
+            created_at: new Date(),
+          },
+        ]);
       }
-    } else {
-      setMessages([
-        {
-          id: 'welcome',
-          role: 'agent',
-          message: isCurrentAdmin
-            ? 'Xin chào Admin! Tôi là Trợ lý AI Nội bộ (Admin Assistant) hỗ trợ quản trị hệ thống. Tôi có thể giúp gì cho bạn hôm nay? (Ví dụ: tra cứu doanh thu, chính sách hoàn tiền, hoặc quy trình xử lý ticket)'
-            : 'Xin chào! Mình có thể giúp gì cho bạn về sản phẩm, đơn hàng hoặc chính sách đổi trả/bảo hành?',
-          created_at: new Date(),
-        },
-      ]);
-    }
+    }, 0);
   }, [pathname, userId]);
   useEffect(() => {
     const getSessionToken = async () => {
@@ -272,12 +471,16 @@ export default function ChatWidget() {
 
   useEffect(() => {
     if (userToken) {
-      fetchUserAndOrdersAndTickets();
+      setTimeout(() => {
+        void fetchUserAndOrdersAndTickets();
+      }, 0);
     } else {
-      setUserId('');
-      setUserEmail('');
-      setUserOrders([]);
-      setTicketsList([]);
+      setTimeout(() => {
+        setUserId('');
+        setUserEmail('');
+        setUserOrders([]);
+        setTicketsList([]);
+      }, 0);
     }
   }, [userToken]);
 
@@ -351,17 +554,38 @@ export default function ChatWidget() {
         }),
       });
 
-      if (!response.ok) {
-        throw new Error('Kết nối API bị lỗi');
-      }
+      const data = await response.json().catch(() => ({}));
 
-      const data = await response.json();
+      if (!response.ok) {
+        if (data?.error?.code === 'ADMIN_ASSISTANT_UNAVAILABLE') {
+          const botMessage: ChatMessage = {
+            id: 'bot_err_' + Date.now(),
+            role: 'agent',
+            message: '⚠️ Trợ lý admin chưa được kết nối.',
+            created_at: new Date(),
+          };
+          setMessages((prev) => [...prev, botMessage]);
+          return;
+        }
+        if (response.status === 503 || data?.error?.code === 'BACKEND_UNAVAILABLE') {
+          const botMessage: ChatMessage = {
+            id: 'bot_err_' + Date.now(),
+            role: 'agent',
+            message: data?.error?.message || '⚠️ Hệ thống AI tư vấn hiện đang tạm thời gián đoạn kết nối. Vui lòng thử lại sau ít phút hoặc gửi yêu cầu hỗ trợ tới nhân viên!',
+            created_at: new Date(),
+          };
+          setMessages((prev) => [...prev, botMessage]);
+          return;
+        }
+        throw new Error(data?.error?.message || `Lỗi máy chủ (${response.status})`);
+      }
 
       const botMessage: ChatMessage = {
         id: 'bot_' + Date.now(),
         role: 'agent',
         message: data.reply || 'Xin lỗi, tôi gặp sự cố khi xử lý câu hỏi này.',
         created_at: new Date(),
+        guard: data.guard || undefined,
       };
 
       setMessages((prev) => [...prev, botMessage]);
@@ -439,9 +663,10 @@ export default function ChatWidget() {
         setTicketMsg(null);
       }, 2000);
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Lỗi tạo ticket hỗ trợ:', err);
-      setTicketMsg({ type: 'error', text: err.message || 'Lỗi hệ thống, không thể gửi yêu cầu.' });
+      const errMsg = err instanceof Error ? err.message : 'Lỗi hệ thống, không thể gửi yêu cầu.';
+      setTicketMsg({ type: 'error', text: errMsg });
     } finally {
       setTicketSaving(false);
     }
@@ -509,9 +734,10 @@ export default function ChatWidget() {
       
       // Cuộn xuống đáy chat
       scrollTicketChatToBottom();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Lỗi gửi tin nhắn ticket:', err);
-      alert('Không thể gửi tin nhắn: ' + err.message);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      alert('Không thể gửi tin nhắn: ' + errMsg);
     } finally {
       setIsSendingTicketMsg(false);
     }
@@ -648,8 +874,35 @@ export default function ChatWidget() {
                           : 'bg-card border border-border text-foreground rounded-tl-none'
                       }`}
                     >
+                      {/* Badge Guard Action (H11 / A6) */}
+                      {msg.role === 'agent' && msg.guard && msg.guard.action && msg.guard.action !== 'allow' && (
+                        <div
+                          className={`mb-2 px-2.5 py-1 rounded text-[11px] font-medium flex items-center gap-1.5 border ${
+                            msg.guard.action === 'block'
+                              ? 'bg-destructive/10 border-destructive/30 text-destructive'
+                              : 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400'
+                          }`}
+                          data-testid={`guard-badge-${msg.guard.action}`}
+                        >
+                          <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                          <span>
+                            {msg.guard.action === 'block'
+                              ? `🛡️ Đã can thiệp bảo vệ: Nội dung bị chặn${msg.guard.decision_id ? ` (#${msg.guard.decision_id})` : ''}`
+                              : `⚠️ Đang kiểm duyệt bảo vệ${msg.guard.decision_id ? ` (#${msg.guard.decision_id})` : ''}`}
+                          </span>
+                        </div>
+                      )}
+
                       <div className="prose prose-sm dark:prose-invert max-w-none text-xs sm:text-sm">
-                        <Markdown options={{ overrides: { a: { component: SafeMarkdownLink } } }}>
+                        <Markdown
+                          options={{
+                            disableParsingRawHTML: isSafeRenderActive(),
+                            overrides: {
+                              a: { component: SafeMarkdownLink },
+                              img: { component: SafeMarkdownImage },
+                            },
+                          }}
+                        >
                           {msg.message}
                         </Markdown>
                       </div>

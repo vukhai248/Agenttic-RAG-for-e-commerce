@@ -19,6 +19,12 @@ next-env.d.ts
 # Testing and coverage
 coverage/
 bench_records/
+playwright-report/
+test-results/
+web_ui/playwright-report/
+web_ui/test-results/
+web_ui/tests/e2e/screenshots/
+tests/e2e/screenshots/
 
 # Misc system files
 .DS_Store
@@ -42,6 +48,8 @@ yarn-error.log*
 .env.development.local
 .env.test.local
 .env.production.local
+.env.bench
+*.env.bench
 web/.env.local
 rag-service/.env
 
@@ -60,6 +68,7 @@ pip-delete-this-directory.txt
 
 # Vector database local storage
 .chroma/
+database/chroma_db/
 *.db
 *.sqlite3
 

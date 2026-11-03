@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { formatBackend4xxError, formatBackend503Error } from './proxy-response';
 
 export async function POST(request: Request) {
   try {
@@ -13,14 +14,13 @@ export async function POST(request: Request) {
     }
 
     // 1. Cố gắng kết nối tới FastAPI Backend AI Service
-    // Đọc URL của RAG service từ biến môi trường (Ví dụ: NEXT_PUBLIC_RAG_SERVICE_URL trong .env.local)
-    // Hoặc sử dụng fallback localhost của FastAPI (mặc định cổng 8000)
     let ragServiceUrl = process.env.NEXT_PUBLIC_RAG_SERVICE_URL || 'http://localhost:8080/chat';
-
-    // Nếu biến môi trường trỏ đến chính nó (mock route), ta đổi sang FastAPI cổng 8080 để tránh loop vô tận
     if (ragServiceUrl.includes('/api/chat')) {
       ragServiceUrl = 'http://localhost:8080/chat';
     }
+
+    const allowMockChat = process.env.NEXT_PUBLIC_ALLOW_MOCK_CHAT === 'true';
+    let backendError: string | null = null;
 
     try {
       console.log(`[Next.js API Proxy] Đang chuyển tiếp tin nhắn tới AI Backend: ${ragServiceUrl}`);
@@ -43,14 +43,26 @@ export async function POST(request: Request) {
         const data = await apiResponse.json();
         console.log('[Next.js API Proxy] Nhận phản hồi thành công từ AI Backend');
         return NextResponse.json(data);
+      } else if (apiResponse.status >= 400 && apiResponse.status < 500) {
+        // J1: Backend trả 4xx thì chuẩn hóa lỗi theo format {error: {code, message}}
+        return NextResponse.json(formatBackend4xxError(apiResponse.status), { status: apiResponse.status });
       } else {
-        console.error(`[Next.js API Proxy] AI Backend báo lỗi: ${apiResponse.status} ${apiResponse.statusText}`);
+        const errText = await apiResponse.text().catch(() => '');
+        backendError = `AI Backend trả mã lỗi ${apiResponse.status} ${apiResponse.statusText}`;
+        console.error(`[Next.js API Proxy] ${backendError}`, errText);
       }
-    } catch (fetchError) {
-      console.warn('[Next.js API Proxy] Không thể kết nối tới FastAPI Backend. Đang chuyển sang chế độ Mock Fallback.');
+    } catch (fetchError: unknown) {
+      const msg = fetchError instanceof Error ? fetchError.message : String(fetchError);
+      backendError = msg || 'Không thể kết nối tới dịch vụ AI Backend';
+      console.warn(`[Next.js API Proxy] Lỗi kết nối FastAPI: ${backendError}`);
     }
 
-    // 2. Chế độ Mock Fallback (chỉ chạy khi FastAPI chưa bật hoặc lỗi)
+    // Khi không bật cờ mock (mặc định tắt), trả 503 BACKEND_UNAVAILABLE theo Hợp đồng API §3
+    if (!allowMockChat) {
+      return NextResponse.json(formatBackend503Error(), { status: 503 });
+    }
+
+    // 2. Chế độ Mock Fallback (chỉ chạy khi NEXT_PUBLIC_ALLOW_MOCK_CHAT=true)
     const msgLower = message.toLowerCase();
     let reply = '';
     let tool_used = '';
