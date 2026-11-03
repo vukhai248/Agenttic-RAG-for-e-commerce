@@ -24,7 +24,7 @@ def stream_chunk(*, text=None, tool=None):
 @pytest.fixture(scope="session")
 def backend():
     # Do not load .env, construct retrievers, open Chroma or contact Supabase.
-    # Only the tool registry is replaced, not the workflow using that registry.
+    # Keep registry and tools real; replace only external vector retrievers.
     patch = pytest.MonkeyPatch()
     settings_module = ModuleType("configs.setting")
     settings_module.settings = SimpleNamespace(
@@ -34,11 +34,10 @@ def backend():
         SUPABASE_SERVICE_ROLE_KEY="offline-service-key",
     )
     patch.setitem(sys.modules, "configs.setting", settings_module)
-    tools_module = ModuleType("src.d_tools")
-    for name in ("product_search", "product_compare", "policy_search", "order_lookup"):
-        setattr(tools_module, name, lambda **kwargs: "offline tool result")
-        setattr(tools_module, f"{name.upper()}_SCHEMA", {})
-    patch.setitem(sys.modules, "src.d_tools", tools_module)
+    for module_name, class_name in (("product_retriever", "ProductRetriever"), ("policy_retriever", "PolicyRetriever")):
+        retriever_module = ModuleType(f"src.c_retrieval.{module_name}")
+        setattr(retriever_module, class_name, lambda **kwargs: SimpleNamespace(retrieve=lambda **kw: []))
+        patch.setitem(sys.modules, retriever_module.__name__, retriever_module)
     workflow = importlib.import_module("src.g_pipelines.workflow_1.workflow_1")
     main = importlib.import_module("app.main")
     security = importlib.import_module("app.core.security")

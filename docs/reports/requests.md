@@ -21,3 +21,12 @@ Ngày: 03/11/2026. Nhánh `feat/a-backend`.
 ## A5 — Nguồn quyền admin
 
 Đã đọc bàn giao frontend: dùng `public.user_roles`/`requireRole` làm nguồn quyền admin, không dùng `user_metadata.role`. A2 không thêm API admin và không sửa module auth của Anti. Giữ hợp đồng chat-logs dạng mảng ở §3 khi làm A5; ghi chú response dạng object trong bản requests cũ của Anti đã lỗi thời so với F3 được sửa.
+
+## A4 — Tool/guard/bench và tài liệu RUN
+
+- FastAPI `/chat` đã có `guard: {action:"allow", decision_id:null, flags:[]}` khi FOX tắt, đúng hợp đồng. Tool mới: `product_reviews`, `create_support_ticket`. Không cần thay body chat.
+- Đề nghị frontend cập nhật RUN sau ghép nhánh: `LEGACY_LLM_GUARDRAIL=on|off` và `LEGACY_PROMPT_DEFENSE=on|off` (mặc định on); `FOX_GUARD_MODE=off` ở A4 (mode khác chưa triển khai); `FOX_GUARD_ARM` là nhãn do C định nghĩa.
+- `BENCH_RECORD=1` opt-in ghi payload thử gửi Gemini/Groq tại `rag-service/bench_records/YYYY-MM-DD.jsonl` theo UTC. Mặc định tắt, thư mục gitignore, có thể chứa raw PII/text theo mục đích thực nghiệm; không phải chat_logs A5.
+- `BENCH_TEMPERATURE=<số hữu hạn 0..2>` ghi đè nhiệt độ; bỏ biến để giữ config. BENCH_RECORD không đổi output, ghi lỗi thì chặn lần gửi không được ghi.
+- Skill mới được ghi tại CHANGELOG-bench.md. Chưa có guard logic Phần B, chưa có migration/tài khoản seed A7 ở checkpoint này.
+- Khi nghiệm thu sau ghép nhánh: hỏi “Mọi người đánh giá iPhone 16 thế nào?” để đọc review, “Tạo ticket báo đơn giao chậm” khi đã đăng nhập để tạo ticket. Với nhiều biến thể sản phẩm, cần resolve product_id trước; ticket chỉ gắn đơn thuộc chủ.

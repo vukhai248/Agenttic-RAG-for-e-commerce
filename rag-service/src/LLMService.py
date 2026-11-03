@@ -1,5 +1,6 @@
 from typing import List, Dict, Any, Optional
 import logging
+from src.bench import temperature, record_request
  
 logger = logging.getLogger(__name__)
  
@@ -77,7 +78,7 @@ class LLMService:
         kwargs = {
             "model": model,
             "messages": messages,
-            "temperature": self.config.generation.temperature,
+            "temperature": temperature(self.config.generation.temperature),
             "max_completion_tokens": self.config.generation.max_tokens,
             "top_p": self.config.generation.top_p,
             "reasoning_effort": self.config.llm.groq.reasoning_effort,
@@ -104,6 +105,7 @@ class LLMService:
  
         while True:
             client = self._get_groq_client()
+            record_request("groq", [self._normalize_msg(m) for m in messages], kwargs)
             try:
                 completion = client.chat.completions.create(**kwargs)
                 return completion
@@ -312,7 +314,7 @@ class LLMService:
         system_instruction = self._extract_system_instruction(messages)
  
         generate_content_config = types.GenerateContentConfig(
-            temperature=self.config.generation.temperature,
+            temperature=temperature(self.config.generation.temperature),
             max_output_tokens=self.config.generation.max_tokens,
             top_p=self.config.generation.top_p,
             thinking_config=types.ThinkingConfig(
@@ -338,6 +340,9 @@ class LLMService:
         max_non_rate_retries = 3
  
         while True:
+            record_request("gemini", [self._normalize_msg(m) for m in messages], {
+                "model": model, "contents": contents, "config": generate_content_config, "stream": use_stream,
+            })
             try:
                 return self._call_gemini_once(model, contents, generate_content_config, use_stream)
             except Exception as e:

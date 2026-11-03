@@ -7,9 +7,10 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from configs.setting import settings
+from src.guard_client import build_context, guard_output
 
 # Import compiled LangGraph Workflow 1
 from src.g_pipelines.workflow_1.workflow_1 import app as workflow_app
@@ -35,11 +36,18 @@ class ChatRequest(BaseModel):
     session_id: Optional[str] = None
     user_token: Optional[str] = None
 
+class GuardResponse(BaseModel):
+    action: str = "allow"
+    decision_id: Optional[str] = None
+    flags: List[str] = Field(default_factory=list)
+
+
 class ChatResponse(BaseModel):
     reply: str
     tool_used: Optional[str] = None
     sources: List[str] = []
     session_id: str
+    guard: GuardResponse = Field(default_factory=GuardResponse)
 
 @app.get("/health")
 def health_check():
@@ -84,7 +92,10 @@ async def chat_endpoint(request: ChatRequest, authorization: Optional[str] = Hea
         )
 
         # Trích xuất kết quả từ Agent State
-        final_answer = result.get("final_answer") or "Xin lỗi, tôi không thể xử lý yêu cầu này."
+        final_answer = result.get("final_answer")
+        if not final_answer:
+            final_answer = guard_output("Xin lỗi, tôi không thể xử lý yêu cầu này.",
+                                        build_context(session_id=session_id, user_id=user_id))
         cited_sources = result.get("cited_sources") or []
         
         # Tổng hợp tool_used từ lịch sử tool calls
