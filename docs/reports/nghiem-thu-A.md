@@ -32,3 +32,11 @@ Kiểm lại: eslint file đổi 0 lỗi · build OK · Playwright 26 passed + 1
 - A5-UI vẫn **Đạt có điều kiện**. Đóng hẳn khi A5.4 đã chạy thật bằng `bench_customer_a`.
 
 Chi tiết: `FOX-Guardrails/docs/plans/prompts/antigravity-phanA.md` (mục "Nghiệm thu lần 3").
+
+## Lần 4 — 03/11/2026 · Anti `8264d41` + Codex `ad5658d`
+
+- Anti F9, F10: **Đạt**. A5.4 chờ có tài khoản bench (Codex A7) để chạy thật.
+- Codex A1: **Đạt**. A2, A4: **Đạt phần code** (pytest 53, Node/PGlite 53, tsc OK), chờ chạy thật với Supabase/Stripe test sau merge và migration.
+- Migration `2026-11_payment_and_address.sql`: **Claude đã duyệt**. Chỉ chạy **sau khi merge frontend**, và phải sao lưu trước.
+- Merge thử: 2 xung đột nhỏ (`.gitignore`, `requests.md`).
+- Việc tiếp: Codex C1, C2 → A5-backend → A7. Anti G1 (RUN.md), G2 (kế hoạch QA).
