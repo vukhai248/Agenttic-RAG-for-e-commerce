@@ -65,3 +65,9 @@ Chi tiết: `FOX-Guardrails/docs/plans/prompts/antigravity-phanA.md` (mục "Ngh
 
 - Anti J1–J4: **Đạt**. Claude chạy lại: tsc 0, eslint 0 lỗi, Playwright 29 passed / 1 skipped (A5.4 chờ seed).
 - Phần code của Phần A đã xong ở cả hai nhánh. Còn: merge (chờ chủ đồ án đồng ý) → sao lưu + chạy 5 migration + seed → Đợt 3 QA toàn web → sửa lỗi QA → nghiệm thu cuối.
+
+## Lần 9 — 03/11/2026 · Merge vào `main` (`262458e`, chưa push)
+
+- `feat/a-backend` → `main` (`d111eda`), rồi `feat/a-frontend` → `main` (`262458e`). 4 xung đột: `.gitignore` (gộp), `requests.md` (giữ cả hai), `rag-service/app/main.py` và `web_ui/src/lib/server/auth.ts` (bản backend).
+- Claude chạy trên `main`: pytest 93 passed; Node/PGlite 77/77; `npm run build` qua; `tsc` 0; Playwright 29 passed / 1 skipped (A5.4 chờ seed).
+- Việc tiếp của chủ đồ án: sao lưu Supabase → chạy 5 migration theo thứ tự → seed bằng fixture mẫu → Anti chạy Đợt 3 (QA toàn web).
