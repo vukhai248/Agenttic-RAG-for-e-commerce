@@ -17,8 +17,11 @@ export async function POST(request: Request) {
     // Hoặc sử dụng fallback localhost của FastAPI (mặc định cổng 8000)
     let ragServiceUrl = process.env.NEXT_PUBLIC_RAG_SERVICE_URL || 'http://localhost:8080/chat';
 
-    // Nếu biến môi trường trỏ đến chính nó (mock route), ta đổi sang FastAPI cổng 8080 để tránh loop vô tận
-    if (ragServiceUrl.includes('/api/chat')) {
+    // Cho phép chuyển tiếp tới URL mock trong môi trường test
+    const mockRagUrl = request.headers.get('x-mock-rag-url');
+    if (process.env.NODE_ENV !== 'production' && mockRagUrl) {
+      ragServiceUrl = mockRagUrl;
+    } else if (ragServiceUrl.includes('/api/chat')) {
       ragServiceUrl = 'http://localhost:8080/chat';
     }
 
@@ -46,13 +49,24 @@ export async function POST(request: Request) {
         const data = await apiResponse.json();
         console.log('[Next.js API Proxy] Nhận phản hồi thành công từ AI Backend');
         return NextResponse.json(data);
+      } else if (apiResponse.status >= 400 && apiResponse.status < 500) {
+        // I1: Backend trả 4xx (ví dụ 422 session_id quá dài, 401...) thì chuyển nguyên status và body JSON
+        let errJson: unknown;
+        try {
+          errJson = await apiResponse.json();
+        } catch {
+          const text = await apiResponse.text().catch(() => '');
+          errJson = { error: text || apiResponse.statusText };
+        }
+        return NextResponse.json(errJson, { status: apiResponse.status });
       } else {
         const errText = await apiResponse.text().catch(() => '');
         backendError = `AI Backend trả mã lỗi ${apiResponse.status} ${apiResponse.statusText}`;
         console.error(`[Next.js API Proxy] ${backendError}`, errText);
       }
-    } catch (fetchError: any) {
-      backendError = fetchError?.message || 'Không thể kết nối tới dịch vụ AI Backend';
+    } catch (fetchError: unknown) {
+      const msg = fetchError instanceof Error ? fetchError.message : String(fetchError);
+      backendError = msg || 'Không thể kết nối tới dịch vụ AI Backend';
       console.warn(`[Next.js API Proxy] Lỗi kết nối FastAPI: ${backendError}`);
     }
 
@@ -63,7 +77,6 @@ export async function POST(request: Request) {
           error: {
             code: 'BACKEND_UNAVAILABLE',
             message: 'Hệ thống AI tư vấn hiện đang tạm thời gián đoạn kết nối. Vui lòng thử lại sau ít phút hoặc tạo ticket để nhân viên hỗ trợ trực tiếp.',
-            details: process.env.NODE_ENV === 'development' ? backendError : undefined,
           }
         },
         { status: 503 }

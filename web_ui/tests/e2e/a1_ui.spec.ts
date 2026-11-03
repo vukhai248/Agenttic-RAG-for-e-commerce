@@ -1,3 +1,5 @@
+import http from 'http';
+import type { AddressInfo } from 'net';
 import { test, expect } from '@playwright/test';
 
 test.describe('Gói A1-UI: Sửa lỗi nền Chatbot (H1 Session ID UUID & H10 Chặn Mock Fake Reply)', () => {
@@ -112,6 +114,40 @@ test.describe('Gói A1-UI: Sửa lỗi nền Chatbot (H1 Session ID UUID & H10 C
 
     // Chụp ảnh bằng chứng CUA
     await page.screenshot({ path: 'tests/e2e/screenshots/a1/chat_backend_unavailable_503.png' });
+  });
+
+  test('A1.4: Proxy /api/chat chuyển tiếp nguyên vẹn lỗi 4xx (422) từ backend, không biến thành 503 (I1)', async ({ request }) => {
+    // 1. Tạo HTTP server mock tạm thời giả lập FastAPI backend trả về 422
+    const mockFastApiServer = http.createServer((req, res) => {
+      res.writeHead(422, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        detail: 'session_id cannot exceed 100 characters'
+      }));
+    });
+
+    await new Promise<void>((resolve) => mockFastApiServer.listen(0, '127.0.0.1', resolve));
+    const port = (mockFastApiServer.address() as AddressInfo).port;
+
+    try {
+      // 2. Gửi request tới /api/chat, chuyển tiếp tới mock FastAPI server qua header x-mock-rag-url
+      const response = await request.post('/api/chat', {
+        headers: {
+          'x-mock-rag-url': `http://127.0.0.1:${port}/chat`
+        },
+        data: {
+          message: 'Xin chào',
+          session_id: 'a'.repeat(105),
+        }
+      });
+
+      // 3. Kỳ vọng: Trả về đúng 422 và body JSON nguyên vẹn, không bị nuốt thành 503
+      expect(response.status()).toBe(422);
+      const body = await response.json();
+      expect(body).toHaveProperty('detail');
+      expect(body.detail).toContain('100 characters');
+    } finally {
+      await new Promise<void>((resolve) => mockFastApiServer.close(() => resolve()));
+    }
   });
 
 });

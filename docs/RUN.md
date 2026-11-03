@@ -188,8 +188,8 @@ npm.cmd run build
 > 3. **Thời điểm thực thi**: **CHỈ CHẠY SAU KHI ĐÃ MERGE FRONTEND** vào nhánh chính.
 > 4. **Thứ tự thực thi migration bắt buộc** (do chủ đồ án chạy lần lượt trên Supabase SQL Editor):
 >    1. `database/migrations/2026-11_payment_and_address.sql` (thu hồi quyền INSERT trực tiếp của client vào bảng `orders`, chuyển luồng tạo đơn/trừ kho sang RPC).
->    2. `database/migrations/2026-11_chat_logs_guard.sql` (bổ sung trường `guard_action`, `decision_id`, `audit_text` cho bảng `chat_logs`).
->    3. `database/migrations/2026-11_product_reviews.sql` (tạo bảng `reviews` với RLS và ràng buộc chỉ khách hàng đã mua mới được đánh giá).
+>    2. `database/migrations/2026-11_chat_logs_guard.sql` (thêm cột `guard_decision_ids text[]` và index `(session_id, created_at)`, khóa quyền đọc/ghi của client `anon`, `authenticated`, chỉ cấp quyền `SELECT`, `INSERT` cho `service_role`).
+>    3. `database/migrations/2026-11_product_reviews.sql` (bảng `reviews` đã có sẵn; migration thu hồi quyền ghi `INSERT`, `UPDATE`, `DELETE` của client `anon`, `authenticated`, tạo hàm RPC `create_product_review` ràng buộc chỉ khách đã mua mới được đánh giá).
 >    4. `database/migrations/2026-11_seed_bench.sql` (khởi tạo bảng mapping và RPC phục vụ bộ dữ liệu đánh giá benchmark).
 > 5. **Khởi tạo dữ liệu Benchmark (Seed)**: Sau khi chạy đủ 4 migration, thực hiện seed dữ liệu benchmark theo hướng dẫn tại [SEED-BENCH.md](SEED-BENCH.md).
 

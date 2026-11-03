@@ -47,3 +47,9 @@ Chi tiết: `FOX-Guardrails/docs/plans/prompts/antigravity-phanA.md` (mục "Ngh
 - 3 migration mới (`chat_logs_guard`, `product_reviews`, `seed_bench`): **Claude đã duyệt**. Thứ tự chạy theo `codex-HANDOFF-A.md` §4.
 - Anti G1, G2: **Chưa đạt**. Nhiều tên/giá trị đoán sai so với code (`payment_intent.succeeded`, `BENCH_RECORD=true`, `inventory_quantity`, `create_order_rpc`, tên tool). Trả lại dưới dạng H1 và H2.
 - Merge thử: 3 xung đột (`.gitignore`, `requests.md`, `rag-service/app/main.py` → giữ bản backend).
+
+## Lần 6 — 03/11/2026 · Anti `0acea79`
+
+- Anti H1, H2: **Đạt có điều kiện**. Còn 4 chỗ đoán (mô tả migration 2–3, điều kiện review COD, đường gọi ca 422, dataset Ca 9) → gói H3.
+- Kế hoạch còn lại đã giao: Đợt 1 Anti (H3, I1–I4), Codex (K1–K4) → Claude merge, chủ đồ án chạy migration và seed → Đợt 3 QA toàn web (Anti) và sửa lỗi (cả hai) → nghiệm thu cuối Phần A.
+- Mới phát hiện: `/api/chat` biến 4xx thành 503; `/api/chat/admin` trả lời giả mà không kiểm quyền.

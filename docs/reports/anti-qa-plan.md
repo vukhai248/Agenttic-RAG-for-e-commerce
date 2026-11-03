@@ -17,10 +17,10 @@ Xác thực toàn diện tính toàn vẹn chức năng, luồng nghiệp vụ E
 > **Bộ kiểm thử này CHỈ ĐƯỢC PHÉP CHẠY khi thỏa mãn toàn bộ các điều kiện sau:**
 > 1. Nhánh `feat/a-frontend` và `feat/a-backend` đã được Claude Opus gộp (merge) thành công vào nhánh chung.
 > 2. Chủ đồ án đã thực thi an toàn đủ 4 file migration theo đúng thứ tự trên Supabase (kèm bản sao lưu toàn bộ database trước khi chạy):
->    - `database/migrations/2026-11_payment_and_address.sql`
->    - `database/migrations/2026-11_chat_logs_guard.sql`
->    - `database/migrations/2026-11_product_reviews.sql`
->    - `database/migrations/2026-11_seed_bench.sql`
+>    - `database/migrations/2026-11_payment_and_address.sql` (thu hồi quyền INSERT của client, chuyển tạo đơn sang RPC server).
+>    - `database/migrations/2026-11_chat_logs_guard.sql` (thêm cột `guard_decision_ids text[]` và index `(session_id, created_at)`, khóa quyền đọc/ghi client, cấp cho service_role).
+>    - `database/migrations/2026-11_product_reviews.sql` (thu hồi quyền ghi client, tạo RPC `create_product_review` ràng buộc chỉ khách đã mua mới được đánh giá).
+>    - `database/migrations/2026-11_seed_bench.sql` (bảng mapping và RPC phục vụ benchmark seed).
 > 3. Đã chạy seed dữ liệu đánh giá benchmark theo [SEED-BENCH.md](../SEED-BENCH.md):
 >    - Lệnh: `conda run -n DL python scripts/seed_bench.py --cases D:/create/DATN/FOX-Guardrails/eval/datasets/vi_cskh/seed_cases.jsonl`
 >    - File `.env.bench` được tạo tự động tại gốc workspace chứa credentials của `bench_customer_a`, `bench_customer_b`, `bench_admin`.
@@ -147,15 +147,17 @@ Xác thực toàn diện tính toàn vẹn chức năng, luồng nghiệp vụ E
 ### Ca 6: Kiểm Thử Quyền Đánh Giá Sản Phẩm (Reviews API Contract)
 - **Mục tiêu**: Xác thực ràng buộc nghiệp vụ chỉ khách hàng đã mua sản phẩm mới được gửi đánh giá (`POST /api/reviews`).
 - **Các bước thực hiện**:
-  1. Dùng tài khoản `bench_customer_a` (chưa từng mua sản phẩm X) gửi đánh giá `POST /api/reviews` với rating 5 sao:
-     - **Kỳ vọng**: API trả về **403 FORBIDDEN** với mã lỗi `NOT_PURCHASED`.
-  2. Tạo đơn hàng cho sản phẩm X:
-     - Trường hợp 1: Đơn hàng COD có trạng thái `accepted` (hoặc `delivered`).
-     - Trường hợp 2: Đơn hàng thanh toán trực tuyến có trạng thái `payment_status: 'paid'`.
-     - Gửi lại request đánh giá `POST /api/reviews`:
+  1. Kiểm tra trường hợp **Chưa mua hàng**:
+     - Lưu ý: Dataset seed mẫu đã tạo sẵn đơn hàng cho `bench_customer_a`. Vì vậy, để kiểm tra ca "chưa mua", sử dụng tài khoản `bench_customer_b` (chưa có đơn hàng nào) hoặc dùng `bench_customer_a` đánh giá một sản phẩm chưa từng có trong đơn hàng nào của user này.
+     - Gửi request `POST /api/reviews` với rating 5 sao:
+     - **Kỳ vọng**: API từ chối và trả về **403 FORBIDDEN** với mã lỗi `NOT_PURCHASED`.
+  2. Kiểm tra trường hợp **Đã mua hàng hợp lệ**:
+     - Điều kiện đủ điều kiện đánh giá theo RPC `create_product_review`: Đơn hàng phải có `status <> 'cancelled'` **VÀ** `payment_status` thuộc một trong hai giá trị: `'paid'` (đã thanh toán trực tuyến) hoặc `'cod_pending'` (đơn COD đang xử lý giao hàng).
+     - Dùng tài khoản có đơn thỏa mãn điều kiện trên gửi `POST /api/reviews`:
      - **Kỳ vọng**: API chấp nhận và trả về **201 CREATED**. Bản ghi được lưu vào bảng `reviews`.
-  3. Đơn hàng ở trạng thái bị hủy (`cancelled`), chưa thanh toán (`unpaid`), hoặc đã hoàn tiền (`refunded`):
-     - **Kỳ vọng**: Không đủ điều kiện đánh giá, trả về **403 FORBIDDEN**.
+  3. Kiểm tra các trường hợp **Không đủ điều kiện**:
+     - Đơn hàng ở trạng thái bị hủy (`status: 'cancelled'`), chưa thanh toán (`payment_status: 'unpaid'`), hoặc đã hoàn tiền (`payment_status: 'refunded'`):
+     - **Kỳ vọng**: Không đủ điều kiện đánh giá, API trả về **403 FORBIDDEN** (`NOT_PURCHASED`).
   4. Đánh giá chứa ký tự tiếng Việt có dấu, ký tự Unicode đặc biệt hoặc emoji:
      - **Kỳ vọng**: Dữ liệu lưu và đọc ra giữ nguyên vẹn 100% đúng codepoint Unicode, không bị lỗi font hay biến dạng ký tự.
 
@@ -168,8 +170,8 @@ Xác thực toàn diện tính toàn vẹn chức năng, luồng nghiệp vụ E
      - Hai người dùng đăng nhập tài khoản khác nhau trên 2 trình duyệt riêng biệt.
      - Kiểm tra không xảy ra rò rỉ hay nhìn thấy lịch sử câu hỏi của nhau trong chat widget.
   2. **Kiểm tra giới hạn độ dài `session_id`**:
-     - Gửi request `POST /api/chat` với `session_id` dài vượt quá 100 ký tự:
-     - **Kỳ vọng**: Backend từ chối ngay với mã lỗi **422 Unprocessable Entity** trước khi chuyển tiếp vào mô hình bot.
+     - Gửi request trực tiếp tới FastAPI `POST http://localhost:8080/chat` hoặc qua proxy frontend `POST /api/chat` với `session_id` dài vượt quá 100 ký tự.
+     - **Kỳ vọng**: Backend từ chối ngay với mã lỗi **422 Unprocessable Entity** trước khi chuyển tiếp vào mô hình bot. Proxy `/api/chat` chuyển tiếp nguyên vẹn mã trạng thái 422 về client (không bị nuốt thành 503).
   3. **Kiểm tra Nhật ký Hội thoại (`chat_logs`)**:
      - Thực hiện hội thoại liên tục 3 lượt hỏi đáp qua lại (multi-turn).
      - Truy vấn bảng `chat_logs` trong cơ sở dữ liệu:
@@ -192,16 +194,19 @@ Xác thực toàn diện tính toàn vẹn chức năng, luồng nghiệp vụ E
 ### Ca 9: Kiểm Thử Tính Bất Biến (Idempotency) & Reset Benchmark Seed (A7)
 - **Mục tiêu**: Xác thực cơ chế seed dữ liệu benchmark có khả năng tái lập và an toàn dữ liệu.
 - **Các bước thực hiện**:
-  1. **Kiểm tra tính Idempotent**:
+  1. **Chuẩn bị dữ liệu mẫu**:
+     - Do bộ dataset chính thức từ Tầng C đang hoàn thiện, tạm thời sử dụng file fixture có sẵn `scripts/fixtures/seed_bench.sample.jsonl`.
+     - Chỉnh sửa `product_id` trong file fixture trên thành một `id` sản phẩm có thật trong database Supabase hiện tại.
+  2. **Kiểm tra tính Idempotent**:
      - Chạy script seed lần 2 với cùng một file dữ liệu JSONL:
        ```powershell
-       conda run -n DL python scripts/seed_bench.py --cases D:/create/DATN/FOX-Guardrails/eval/datasets/vi_cskh/seed_cases.jsonl
+       conda run -n DL python scripts/seed_bench.py --cases scripts/fixtures/seed_bench.sample.jsonl
        ```
      - **Kỳ vọng**: Dữ liệu và các ID bản ghi được giữ nguyên vẹn, không sinh thêm dòng rác hay nhân đôi bản ghi.
-  2. **Kiểm tra cơ chế Reset có kiểm soát (`--reset`)**:
+  3. **Kiểm tra cơ chế Reset có kiểm soát (`--reset`)**:
      - Chạy lệnh seed kèm cờ `--reset`:
        ```powershell
-       conda run -n DL python scripts/seed_bench.py --cases D:/create/DATN/FOX-Guardrails/eval/datasets/vi_cskh/seed_cases.jsonl --reset
+       conda run -n DL python scripts/seed_bench.py --cases scripts/fixtures/seed_bench.sample.jsonl --reset
        ```
      - **Kỳ vọng**: Script chỉ xóa và tái tạo các dòng dữ liệu nằm trong namespace mapping của file credential hiện tại; tuyệt đối không xóa dữ liệu thật của cửa hàng hoặc namespace khác.
      - Nếu một đơn hàng bench đang có ticket ngoại lai tham chiếu tới: script từ chối reset (`BENCH_REFERENCED`) để tránh phá vỡ toàn vẹn dữ liệu.

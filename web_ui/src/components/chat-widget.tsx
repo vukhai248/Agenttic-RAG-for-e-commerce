@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { MessageSquare, X, Send, Bot, User, Loader2, AlertCircle, Plus, ChevronLeft, CheckCircle2, Clock } from 'lucide-react';
+import { MessageSquare, X, Send, Bot, User, Loader2, AlertCircle, Plus, ChevronLeft } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import Markdown from 'markdown-to-jsx';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 interface GuardInfo {
   action: 'allow' | 'block' | 'review' | 'flag' | string;
@@ -256,21 +257,18 @@ const getStorageKeys = (isAdmin: boolean, uid: string) => {
   };
 };
 
+interface UserOrderSummary {
+  id: string;
+  total: number;
+}
+
 export default function ChatWidget() {
-  const [isOpen, setIsOpen] = useState(false);
-  const [pathname, setPathname] = useState('');
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const path = window.location.pathname;
-      setPathname(path);
-      if (path.startsWith('/admin')) {
-        setChatMode('bot');
-      }
-    }
-  }, [isOpen]);
-
+  const currentPathname = usePathname() || '';
+  const pathname = currentPathname;
   const isAdminPage = pathname.startsWith('/admin');
+
+  const [isOpen, setIsOpen] = useState(false);
+  const [chatMode, setChatMode] = useState<'bot' | 'staff'>('bot');
   
   // AI Chatbot States
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -278,12 +276,17 @@ export default function ChatWidget() {
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState('');
   const [userToken, setUserToken] = useState<string | null>(null);
-
-  // Phân hệ chat: AI Chatbot ('bot') hoặc Gửi hỗ trợ cho Nhân viên ('staff')
-  const [chatMode, setChatMode] = useState<'bot' | 'staff'>('bot');
   
   // States cho Staff Support (Gặp nhân viên)
-  const [userOrders, setUserOrders] = useState<any[]>([]);
+  const [userOrders, setUserOrders] = useState<UserOrderSummary[]>([]);
+
+  useEffect(() => {
+    if (isAdminPage) {
+      setTimeout(() => {
+        setChatMode('bot');
+      }, 0);
+    }
+  }, [isAdminPage, isOpen]);
   const [userEmail, setUserEmail] = useState<string>('');
   const [userId, setUserId] = useState<string>('');
   
@@ -373,33 +376,37 @@ export default function ChatWidget() {
       storedSession = generateUUID();
       localStorage.setItem(sessionKey, storedSession);
     }
-    setSessionId(storedSession);
-
+    const nextSessionId = storedSession;
     const storedHistory = localStorage.getItem(historyKey);
-    if (storedHistory) {
-      try {
-        const parsed = JSON.parse(storedHistory);
-        setMessages(
-          parsed.map((m: any) => ({
-            ...m,
-            created_at: new Date(m.created_at),
-          }))
-        );
-      } catch (e) {
-        console.error('Không thể phục hồi lịch sử chat:', e);
+
+    setTimeout(() => {
+      setSessionId(nextSessionId);
+
+      if (storedHistory) {
+        try {
+          const parsed = JSON.parse(storedHistory);
+          setMessages(
+            parsed.map((m: ChatMessage) => ({
+              ...m,
+              created_at: new Date(m.created_at),
+            }))
+          );
+        } catch (e) {
+          console.error('Không thể phục hồi lịch sử chat:', e);
+        }
+      } else {
+        setMessages([
+          {
+            id: 'welcome',
+            role: 'agent',
+            message: isCurrentAdmin
+              ? 'Xin chào Admin! Tôi là Trợ lý AI Nội bộ (Admin Assistant) hỗ trợ quản trị hệ thống. Tôi có thể giúp gì cho bạn hôm nay? (Ví dụ: tra cứu doanh thu, chính sách hoàn tiền, hoặc quy trình xử lý ticket)'
+              : 'Xin chào! Mình có thể giúp gì cho bạn về sản phẩm, đơn hàng hoặc chính sách đổi trả/bảo hành?',
+            created_at: new Date(),
+          },
+        ]);
       }
-    } else {
-      setMessages([
-        {
-          id: 'welcome',
-          role: 'agent',
-          message: isCurrentAdmin
-            ? 'Xin chào Admin! Tôi là Trợ lý AI Nội bộ (Admin Assistant) hỗ trợ quản trị hệ thống. Tôi có thể giúp gì cho bạn hôm nay? (Ví dụ: tra cứu doanh thu, chính sách hoàn tiền, hoặc quy trình xử lý ticket)'
-            : 'Xin chào! Mình có thể giúp gì cho bạn về sản phẩm, đơn hàng hoặc chính sách đổi trả/bảo hành?',
-          created_at: new Date(),
-        },
-      ]);
-    }
+    }, 0);
   }, [pathname, userId]);
   useEffect(() => {
     const getSessionToken = async () => {
@@ -464,12 +471,16 @@ export default function ChatWidget() {
 
   useEffect(() => {
     if (userToken) {
-      fetchUserAndOrdersAndTickets();
+      setTimeout(() => {
+        void fetchUserAndOrdersAndTickets();
+      }, 0);
     } else {
-      setUserId('');
-      setUserEmail('');
-      setUserOrders([]);
-      setTicketsList([]);
+      setTimeout(() => {
+        setUserId('');
+        setUserEmail('');
+        setUserOrders([]);
+        setTicketsList([]);
+      }, 0);
     }
   }, [userToken]);
 
@@ -546,6 +557,16 @@ export default function ChatWidget() {
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
+        if (data?.error?.code === 'ADMIN_ASSISTANT_UNAVAILABLE') {
+          const botMessage: ChatMessage = {
+            id: 'bot_err_' + Date.now(),
+            role: 'agent',
+            message: '⚠️ Trợ lý admin chưa được kết nối.',
+            created_at: new Date(),
+          };
+          setMessages((prev) => [...prev, botMessage]);
+          return;
+        }
         if (response.status === 503 || data?.error?.code === 'BACKEND_UNAVAILABLE') {
           const botMessage: ChatMessage = {
             id: 'bot_err_' + Date.now(),
@@ -642,9 +663,10 @@ export default function ChatWidget() {
         setTicketMsg(null);
       }, 2000);
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Lỗi tạo ticket hỗ trợ:', err);
-      setTicketMsg({ type: 'error', text: err.message || 'Lỗi hệ thống, không thể gửi yêu cầu.' });
+      const errMsg = err instanceof Error ? err.message : 'Lỗi hệ thống, không thể gửi yêu cầu.';
+      setTicketMsg({ type: 'error', text: errMsg });
     } finally {
       setTicketSaving(false);
     }
@@ -712,9 +734,10 @@ export default function ChatWidget() {
       
       // Cuộn xuống đáy chat
       scrollTicketChatToBottom();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Lỗi gửi tin nhắn ticket:', err);
-      alert('Không thể gửi tin nhắn: ' + err.message);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      alert('Không thể gửi tin nhắn: ' + errMsg);
     } finally {
       setIsSendingTicketMsg(false);
     }

@@ -1,6 +1,27 @@
 import { NextResponse } from 'next/server';
+import { requireRole } from '@/lib/server/auth';
 
 export async function POST(request: Request) {
+  // 1. Kiểm tra xác thực và phân quyền: chỉ admin và staff
+  const auth = await requireRole(request, ['admin', 'staff']);
+  if (auth.errorResponse) {
+    return auth.errorResponse;
+  }
+
+  // 2. Khi cờ mock tắt (mặc định), trả về 503 ADMIN_ASSISTANT_UNAVAILABLE
+  const allowMockAdmin = process.env.NEXT_PUBLIC_ALLOW_MOCK_ADMIN === 'true';
+  if (!allowMockAdmin) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'ADMIN_ASSISTANT_UNAVAILABLE',
+          message: 'Trợ lý admin chưa được kết nối.',
+        },
+      },
+      { status: 503 }
+    );
+  }
+
   try {
     const body = await request.json();
     const { message, session_id } = body;

@@ -134,6 +134,7 @@ export default function AdminPage() {
   const [chatLogs, setChatLogs] = useState<ChatLog[]>([]);
   const [isChatLogsLoading, setIsChatLogsLoading] = useState(false);
   const [selectedChatSession, setSelectedChatSession] = useState<string | null>(null);
+  const [selectedChatUser, setSelectedChatUser] = useState<string | null>(null);
   const [chatLogFilterRisk, setChatLogFilterRisk] = useState<string>('all');
   const [chatLogSearch, setChatLogSearch] = useState<string>('');
 
@@ -4598,11 +4599,15 @@ export default function AdminPage() {
                       </thead>
                       <tbody className="divide-y divide-border text-xs">
                         {filteredLogs.map((log) => {
-                          const isSelected = selectedChatSession === log.session_id;
+                          const logUserKey = log.user_id || 'anonymous';
+                          const isSelected = selectedChatSession === log.session_id && selectedChatUser === logUserKey;
                           return (
                             <tr
                               key={log.id}
-                              onClick={() => setSelectedChatSession(log.session_id)}
+                              onClick={() => {
+                                setSelectedChatSession(log.session_id);
+                                setSelectedChatUser(logUserKey);
+                              }}
                               className={`hover:bg-muted/30 transition-colors cursor-pointer ${
                                 isSelected ? 'bg-primary/10 border-l-2 border-l-primary' : ''
                               }`}
@@ -4705,13 +4710,19 @@ export default function AdminPage() {
                     </h3>
                     <p className="text-[10px] text-muted-foreground">
                       {selectedChatSession ? `Session: ${selectedChatSession}` : 'Chưa chọn phiên'}
+                      {selectedChatUser && selectedChatUser !== 'anonymous' && (
+                        <span className="block text-[10px] text-primary">User: {selectedChatUser}</span>
+                      )}
                     </p>
                   </div>
 
                   {selectedChatSession && (
                     <button
                       type="button"
-                      onClick={() => setSelectedChatSession(null)}
+                      onClick={() => {
+                        setSelectedChatSession(null);
+                        setSelectedChatUser(null);
+                      }}
                       className="text-[10px] text-muted-foreground hover:text-foreground cursor-pointer"
                     >
                       Đóng
@@ -4721,7 +4732,14 @@ export default function AdminPage() {
 
                 {selectedChatSession ? (() => {
                   const sessionLogs = chatLogs
-                    .filter((l) => l.session_id === selectedChatSession)
+                    .filter((l) => {
+                      if (l.session_id !== selectedChatSession) return false;
+                      const logUser = l.user_id || 'anonymous';
+                      if (selectedChatUser && selectedChatUser !== 'anonymous') {
+                        return logUser === selectedChatUser || !l.user_id;
+                      }
+                      return logUser === 'anonymous';
+                    })
                     .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
                   return (

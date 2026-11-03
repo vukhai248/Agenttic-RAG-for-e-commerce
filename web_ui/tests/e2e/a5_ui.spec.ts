@@ -294,12 +294,45 @@ test.describe('Gói A5-UI: Dữ liệu thật Admin & Nhật ký hội thoại C
       expect(putRes.status()).toBe(403);
       const putBody = await putRes.json();
       expect(putBody.error?.code).toBe('FORBIDDEN');
+
+      // 5.1 Thử gọi POST /api/chat/admin với token của customer -> 403 FORBIDDEN (I2)
+      const chatAdminRes = await request.post('/api/chat/admin', {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        data: {
+          message: 'Báo cáo doanh thu hôm nay'
+        }
+      });
+      expect(chatAdminRes.status()).toBe(403);
+      const chatAdminBody = await chatAdminRes.json();
+      expect(chatAdminBody.error?.code).toBe('FORBIDDEN');
     } finally {
       // 6. Dọn dẹp metadata về role ban đầu
       await supabase.auth.updateUser({
         data: { role: null }
       });
     }
+  });
+
+  test('A5.5: Route POST /api/chat/admin kiểm soát quyền: không có token hoặc token sai -> 401 UNAUTHENTICATED (I2)', async ({ request }) => {
+    // 1. Không có token -> 401 UNAUTHENTICATED
+    const resNoToken = await request.post('/api/chat/admin', {
+      data: { message: 'Báo cáo doanh thu' }
+    });
+    expect(resNoToken.status()).toBe(401);
+    const dataNoToken = await resNoToken.json();
+    expect(dataNoToken.error?.code).toBe('UNAUTHENTICATED');
+
+    // 2. Token không hợp lệ -> 401 UNAUTHENTICATED
+    const resBadToken = await request.post('/api/chat/admin', {
+      headers: { 'Authorization': 'Bearer bad_fake_token' },
+      data: { message: 'Báo cáo doanh thu' }
+    });
+    expect(resBadToken.status()).toBe(401);
+    const dataBadToken = await resBadToken.json();
+    expect(dataBadToken.error?.code).toBe('UNAUTHENTICATED');
   });
 
 });
