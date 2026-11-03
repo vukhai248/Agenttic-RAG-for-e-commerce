@@ -224,6 +224,28 @@ test('webhook database/stock failure remains retryable and does not return succe
   assert.equal((await handlers.webhook(webhookRequest())).status, 503);
 });
 
+for (const code of ['PAYMENT_MISMATCH', 'NOT_FOUND', 'NOT_EDITABLE']) {
+  test(`permanent webhook failure ${code} is acknowledged with only order ID and code logged`, async t => {
+    const logged = [];
+    t.mock.method(console, 'error', (...args) => logged.push(args));
+    const { handlers } = context({ rpc: async () => { throw Error(code); } });
+    const response = await handlers.webhook(webhookRequest());
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { received: true });
+    assert.deepEqual(logged, [[{ order_id: id, code }]]);
+  });
+}
+
+test('unknown database failure stays retryable without logging error details or PII', async t => {
+  const logged = [];
+  t.mock.method(console, 'error', (...args) => logged.push(args));
+  const { handlers } = context({ rpc: async () => { throw Error('connection lost: private address 0912345678'); } });
+  const response = await handlers.webhook(webhookRequest());
+  assert.equal(response.status, 503);
+  assert.deepEqual(logged, []);
+  assert.doesNotMatch(JSON.stringify(await response.json()), /0912345678|private address/);
+});
+
 test('malformed signed session without an ID returns 400 rather than throwing', async () => {
   const template = context().deps.verifyEvent();
   const ctx = context({ verifyEvent: () => ({ ...template, data: { object: { ...template.data.object, id: undefined } } }) });

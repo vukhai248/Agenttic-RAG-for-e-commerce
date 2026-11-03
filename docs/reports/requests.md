@@ -20,7 +20,7 @@ Ngày: 03/11/2026. Nhánh `feat/a-backend`.
 
 ## A5 — Nguồn quyền admin
 
-Đã đọc bàn giao frontend: dùng `public.user_roles`/`requireRole` làm nguồn quyền admin, không dùng `user_metadata.role`. A2 không thêm API admin và không sửa module auth của Anti. Giữ hợp đồng chat-logs dạng mảng ở §3 khi làm A5; ghi chú response dạng object trong bản requests cũ của Anti đã lỗi thời so với F3 được sửa.
+Đã đọc bàn giao frontend: dùng `public.user_roles`/`requireRole` làm nguồn quyền admin, không dùng `user_metadata.role`. A2 không thêm API admin và không sửa module auth của Anti. Theo đính chính C2 của Claude (03/11/2026), hợp đồng chat-logs chuẩn là object `{chat_logs, total, limit, offset}` đã được chấp nhận ở F3; thay thế dạng mảng trong E §3 cũ. A5-backend chỉ ghi bảng chat_logs, không viết lại route frontend.
 
 ## A4 — Tool/guard/bench và tài liệu RUN
 

@@ -121,7 +121,12 @@ export function createOrderHandlers(deps: PaymentDependencies) {
           p_order_id: orderId, p_session_id: session.id, p_amount_total: session.amount_total, p_currency: session.currency,
         });
         return Response.json({ received: true });
-      } catch {
+      } catch (error) {
+        const code = error instanceof Error ? error.message : '';
+        if (['PAYMENT_MISMATCH', 'NOT_FOUND', 'NOT_EDITABLE'].includes(code)) {
+          console.error({ order_id: orderId, code });
+          return Response.json({ received: true });
+        }
         return errorResponse(new OrderError('WEBHOOK_RETRY', 503, 'Chưa thể xác nhận đơn hàng; webhook cần được gửi lại.'));
       }
     },
