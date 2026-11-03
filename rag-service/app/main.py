@@ -12,6 +12,7 @@ from typing import Optional, List
 from configs.setting import settings
 from src.guard_client import build_context, guard_output
 from src.chat_logging import write_chat_turn
+from src.health import service_health
 
 # Import compiled LangGraph Workflow 1
 from src.g_pipelines.workflow_1.workflow_1 import app as workflow_app
@@ -52,12 +53,7 @@ class ChatResponse(BaseModel):
 
 @app.get("/health")
 def health_check():
-    return {
-        "status": "healthy", 
-        "service": "rag-service",
-        "debug_mode": settings.DEBUG,
-        "supabase_connected": bool(settings.SUPABASE_URL)
-    }
+    return service_health()
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest, authorization: Optional[str] = Header(None)):
