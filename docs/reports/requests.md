@@ -39,3 +39,14 @@ Ngày: 03/11/2026. Nhánh `feat/a-backend`.
 - B có thể trả danh sách decision IDs của cả lượt qua AgentState.guard_decision_ids; writer gộp với IDs do guard_log trả. Trường này và turn_tool_calls reset mỗi lượt. Các hook input/context/output hiện giữ hợp đồng A4; A5 không tự triển khai detector hoặc thay policy B.
 - Lỗi log không làm chat/tool đã hoàn tất thành lỗi/retry, chỉ phát mã cảnh báo cố định để vận hành; chưa có queue khôi phục. Ba lượt chat có 6 dòng message thật khi DB/migration sẵn sàng.
 - Admin route chuẩn vẫn object `{chat_logs,total,limit,offset}` theo Claude C2. Dữ liệu client session_id cần UUID riêng theo user theo A1; nếu caller tự gửi trùng chuỗi giữa hai user, admin hiện nhóm theo session_id có thể trộn nhóm (khách không đọc được log). Khi cần chống nhóm trùng tuyệt đối, Anti bổ sung user_id vào grouping/filter; không sửa chéo UI tại gói này.
+
+## A7 hoàn tất code và bổ sung tích hợp — bàn giao cuối
+
+- Canonical handoff: `docs/reports/codex-HANDOFF-A.md`; cách seed và recovery: `docs/SEED-BENCH.md`. Seed code tại 40e1c64; review API/health tại c811652. Chưa tạo tài khoản/ghi credential trên Supabase thật vì migration mới và bộ C chưa có.
+- Migration mới cần Claude duyệt/chủ đồ án apply: chat_logs_guard, product_reviews, seed_bench; payment_and_address đã được Claude duyệt nhưng vẫn chỉ apply sau khi merge frontend/sao lưu.
+- C cần tạo `seed_cases.jsonl` theo ba trường case_id/table/fields; user_id là alias bench_customer_a/b. Không đưa nhãn/gold/canary vào seed công khai. Mẫu `scripts/fixtures/seed_bench.sample.jsonl` chỉ là smoke, product_id=1 phải thay theo catalog thật nếu không tồn tại.
+- POST `/api/reviews` trước đây chưa có ở cả hai nhánh, nay đã bổ sung trong phạm vi Codex: JWT/owner phía server, paid hoặc COD accepted và không cancelled, nguyên văn comment. RPC create_product_review chỉ service role. Form không cần đổi hợp đồng.
+- `/health` backend mới kiểm Supabase anon thật và Chroma collection hiện có, không chỉ bool cấu hình. Merge main.py giữ `service_health()` và toàn bộ xử lý A1/A4/A5 phía backend.
+- Rà merge-tree sau c811652: 3 conflict dự kiến `.gitignore`, `docs/reports/requests.md`, `rag-service/app/main.py`. Git tree simulation không merge hay sửa nhánh frontend/main. Keep ignore union và hợp nhất requests; main.py dùng code backend mới (diff frontend ở đây chỉ là health cũ).
+- Đính chính QA plan của Anti: tồn kho là `products.stock`, webhook fulfillment dùng `checkout.session.completed`/`checkout.session.async_payment_succeeded`, không dùng payment_intent.succeeded. Acknowledge chuẩn là `{received:true}`; không yêu cầu trường already_processed. Khi replay event đã ký phải giữ chữ ký hợp lệ hoặc dùng Stripe CLI resend; kiểm DB để khẳng định kho chỉ trừ một lần.
+- A5 có 2 message mỗi exchange; chat3 lượt =>6 dòng user/agent. Role bot là agent theo schema, không phải assistant. Live A5.4 admin auth vẫn chờ seed thật; test skip không phải đạt.
