@@ -11,6 +11,8 @@ class LLMService:
         self._groq_client = None
         self._gemini_client = None
         self._ollama_client = None
+        self._tokenharbor_client = None
+        self._tokenharbor_off_until = 0.0
         self._gemini_keys = None
         self._groq_keys = None
         self._gemini_key_index = 0
@@ -375,6 +377,109 @@ class LLMService:
                     continue
  
                 raise
+
+    # ------------------------------------------------------------------
+    # TokenHarbor (OpenAI-compatible) — LLM chính; Gemini là dự phòng
+    # ------------------------------------------------------------------
+    _QUOTA_MARKERS = ("429", "402", "quota", "rate limit", "rate_limit", "insufficient", "too many requests",
+                      "credit", "exhausted")
+
+    def _tokenharbor_ready(self) -> bool:
+        import time
+        return bool(getattr(self.settings, "TOKENHARBOR_API_KEY", "")) and time.time() >= self._tokenharbor_off_until
+
+    def _get_tokenharbor_client(self):
+        if self._tokenharbor_client is None:
+            from openai import OpenAI
+            self._tokenharbor_client = OpenAI(
+                api_key=self.settings.TOKENHARBOR_API_KEY,
+                base_url=getattr(self.settings, "TOKENHARBOR_BASE_URL", "") or "https://tokenharbor.ai/v1",
+                timeout=float(getattr(self.settings, "TOKENHARBOR_TIMEOUT", 60) or 60),
+                max_retries=1,
+            )
+        return self._tokenharbor_client
+
+    def _to_openai_messages(self, messages: list) -> list:
+        out = []
+        for raw in messages:
+            m = self._normalize_msg(raw)
+            role = m.get("role")
+            if role not in ("system", "user", "assistant", "tool"):
+                continue
+            msg = {"role": role, "content": m.get("content") if m.get("content") is not None else ""}
+            if role == "assistant" and m.get("tool_calls"):
+                # Gemini-only fields (thought_signature) are dropped; ids are the agent's own.
+                msg["tool_calls"] = [{"id": tc["id"], "type": "function",
+                                      "function": {"name": tc["function"]["name"],
+                                                   "arguments": tc["function"]["arguments"] or "{}"}}
+                                     for tc in m["tool_calls"]]
+                msg["content"] = m.get("content") or None
+            if role == "tool":
+                msg["tool_call_id"] = m.get("tool_call_id")
+            out.append(msg)
+        return out
+
+    def _call_tokenharbor(self, messages: list, tools: list = None) -> list:
+        """One non-streamed call, returned as Gemini-shaped chunks so every caller parses it unchanged."""
+        import json
+        from types import SimpleNamespace
+
+        kwargs = {
+            "model": getattr(self.settings, "TOKENHARBOR_MODEL", "") or "deepseek-v4.1-flash:free",
+            "messages": self._to_openai_messages(messages),
+            "temperature": temperature(self.config.generation.temperature),
+            "max_tokens": self.config.generation.max_tokens,
+        }
+        if tools:
+            kwargs["tools"] = [t if isinstance(t, dict) and "type" in t else {"type": "function", "function": t}
+                               for t in tools]
+        record_request("tokenharbor", kwargs["messages"], {k: v for k, v in kwargs.items() if k != "messages"})
+        response = self._get_tokenharbor_client().chat.completions.create(**kwargs)
+        message = response.choices[0].message
+        text = message.content or ""
+        parts = []
+        if text:
+            parts.append(SimpleNamespace(text=text, function_call=None, thought_signature=None))
+        for tc in message.tool_calls or []:
+            try:
+                args = json.loads(tc.function.arguments or "{}")
+            except json.JSONDecodeError:
+                args = {}
+            parts.append(SimpleNamespace(text=None, thought_signature=None,
+                                         function_call=SimpleNamespace(name=tc.function.name, args=args)))
+        if not parts:
+            raise RuntimeError("TokenHarbor returned neither text nor tool calls")
+        usage = response.usage
+        return [SimpleNamespace(
+            text=text,
+            usage_metadata=SimpleNamespace(prompt_token_count=getattr(usage, "prompt_tokens", 0) or 0,
+                                           candidates_token_count=getattr(usage, "completion_tokens", 0) or 0),
+            candidates=[SimpleNamespace(content=SimpleNamespace(parts=parts))],
+        )]
+
+    def call_llm(self, model, messages: list, tools: list = None, stream: bool = None):
+        """Main LLM entry: TokenHarbor first, Gemini (`model`) when TokenHarbor fails or runs out.
+
+        Out of quota → TokenHarbor is skipped for TOKENHARBOR_COOLDOWN seconds (default 600), so each
+        turn does not wait for a failing call first."""
+        import time
+        if self._tokenharbor_ready():
+            try:
+                return self._call_tokenharbor(messages, tools)
+            except Exception as e:
+                err = str(e).lower()
+                if any(k in err for k in self._QUOTA_MARKERS):
+                    cooldown = float(getattr(self.settings, "TOKENHARBOR_COOLDOWN", 600) or 600)
+                    self._tokenharbor_off_until = time.time() + cooldown
+                    logger.warning("TOKENHARBOR_QUOTA → Gemini for %ss", int(cooldown))
+                else:
+                    logger.warning("TOKENHARBOR_FAILED (%s) → Gemini", type(e).__name__)
+        kwargs = {"model": model, "messages": messages}
+        if tools is not None:
+            kwargs["tools"] = tools
+        if stream is not None:
+            kwargs["stream"] = stream
+        return self.call_gemini(**kwargs)
 
     # ------------------------------------------------------------------
     # Ollama (model local - OpenAI-compatible, tối giản cho local)

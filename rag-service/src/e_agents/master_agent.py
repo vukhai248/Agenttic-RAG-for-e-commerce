@@ -61,7 +61,7 @@ class MasterAgent:
             turn_output_tokens = 0
 
             # Gọi API Gemini với streaming — LUÔN True
-            response_stream = self.llm_service.call_gemini(
+            response_stream = self.llm_service.call_llm(
                 model=self.model,
                 messages=messages,
                 tools=tools_schema,
