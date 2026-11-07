@@ -40,7 +40,7 @@ class GuardrailCall:
         ]
 
         # 3. Gọi LLMService
-        response = self.llm_service.call_gemini(
+        response = self.llm_service.call_llm(
             model=self.model,
             messages=security_messages
         )

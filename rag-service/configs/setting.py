@@ -42,6 +42,13 @@ class Settings(BaseSettings):
 
     OPENROUTER_API_KEY: str = ""
 
+    # TokenHarbor (OpenAI-compatible): LLM chính; trống → chỉ dùng Gemini
+    TOKENHARBOR_API_KEY: str = ""
+    TOKENHARBOR_BASE_URL: str = "https://tokenharbor.ai/v1"
+    TOKENHARBOR_MODEL: str = "deepseek-v4.1-flash:free"
+    TOKENHARBOR_TIMEOUT: float = 60
+    TOKENHARBOR_COOLDOWN: float = 600
+
     # 4. Vector Database Config
     VECTOR_DB_DIR: str = "../database/chroma_db"
     CHROMA_HOST: str = "localhost"

@@ -48,7 +48,7 @@ class RejectionCall:
         ]
         
         # Gọi Gemini LLM thông qua dịch vụ LLMService
-        response = self.llm_service.call_gemini(
+        response = self.llm_service.call_llm(
             model=self.model,
             messages=rejection_messages
         )
