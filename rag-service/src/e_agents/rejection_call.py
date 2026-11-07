@@ -82,4 +82,4 @@ class RejectionCall:
                 "input": input_tokens,
                 "output": output_tokens
             }
-        }
+        }
