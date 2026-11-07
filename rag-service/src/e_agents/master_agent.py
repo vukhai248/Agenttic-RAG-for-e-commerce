@@ -7,7 +7,7 @@ from configs.GetConfig import config
 from src.LLMService import LLMService
 from src.f_prompts import FULL_MASTER_PROMPT
 from src.d_tools.tool_result import ToolResult
-from src.guard_client import build_context, guard_context, guard_output
+from src.guard_client import build_context, guard_context, guard_log, guard_output, guard_restore_args
 
 
 class MasterAgent:
@@ -170,7 +170,9 @@ class MasterAgent:
 
                     if func_name in available_tools:
                         real_function = available_tools[func_name]
-                        result = real_function(**func_args)
+                        # Placeholders (<PHONE_1>) back to the owner's values for the call only;
+                        # func_args stays masked for tool_context / history.
+                        result = real_function(**guard_restore_args(func_args, guard_ctx))
                         if isinstance(result, ToolResult):
                             result.untrusted = [guard_context(segment, {**guard_ctx, "tool": func_name})
                                                 for segment in result.untrusted]
@@ -199,11 +201,25 @@ class MasterAgent:
                 continue
             else:
                 total_elapsed = time.time() - start_time
+                llm_text = text_content
                 text_content = guard_output(text_content, guard_ctx)
                 agent_msg["content"] = text_content
+                # History goes back to the LLM next turn: never the restored reply (it would undo input
+                # pseudonymization). Keep the model's own text, or an irreversibly redacted one if the
+                # output guard changed it (blocked solicitation, removed link).
+                if getattr(text_content, "action", "allow") in ("block", "mask"):
+                    try:
+                        history_text = guard_log(text_content, {**guard_ctx, "role": "agent"}).message
+                    except Exception:  # guard unreachable: keep only the guard's own safe text
+                        history_text = str(text_content) if "guard_unavailable" in getattr(
+                            text_content, "flags", ()) else None
+                else:
+                    history_text = llm_text
 
                 return {
                     "content": text_content if text_content else None,
+                    "history_content": history_text if history_text else None,
+                    "output_decision_id": getattr(text_content, "decision_id", None),
                     "loop_exhausted": False,
                     "tool_context": tool_context,
                     "latency": total_elapsed,

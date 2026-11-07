@@ -130,6 +130,8 @@ class AgentState(TypedDict):
     tool_calls_used: Annotated[list[dict], operator.add]  # ⚡ Reducer cộng dồn lịch sử tool calls (mỗi dict = {tool, args, response?})
     turn_tool_calls: list[dict]
     guard_decision_ids: list[str]
+    guard: dict                              # FOX verdict on the input: action, decision_id, flags
+    guard_harden: Optional[str]              # FOX "review": system reminder added for this turn
     iteration_count: int                     # Đếm số lần lặp chống infinite loop
 
     # 6. Hội thoại
@@ -175,10 +177,24 @@ def receive_node(state: AgentState) -> dict:
 
 #=================================================
 
+def _fox_verdict(text) -> dict:
+    """FOX verdict carried by GuardedText (plain str when the guard is off or mocked)."""
+    return {"action": getattr(text, "action", "allow"), "decision_id": getattr(text, "decision_id", None),
+            "flags": list(getattr(text, "flags", ()))}
+
+
 def guardrail_node(state: AgentState) -> dict:
     ctx = build_context(session_id=state.get("session_id"), user_id=state.get("user_id"))
     query = guard_input(state["user_query"], ctx)
-    
+    verdict = _fox_verdict(query)
+    fox = {"guard": verdict, "guard_harden": getattr(query, "harden_prompt_text", None),
+           "guard_decision_ids": [verdict["decision_id"]] if verdict["decision_id"] else []}
+    query = str(query) if isinstance(query, str) else query  # plain str in graph state (checkpointer)
+    if verdict["action"] == "block":
+        # FOX refused: `query` is already the refusal text; no LLM sees the attack (legacy guard included).
+        return {**fox, "risk_level": "attack", "show_popup": True, "user_query": query,
+                "latency": 0, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
     result = ({"risk_level": "safe", "latency": 0, "tokens": {"input": 0, "output": 0}}
               if os.getenv("LEGACY_LLM_GUARDRAIL", "on").lower() == "off"
               else guardrail_call.invoke(query))
@@ -187,6 +203,7 @@ def guardrail_node(state: AgentState) -> dict:
     # Chỉ lưu tin nhắn khi KHÔNG phải attack
     if risk_level != "attack":
         return {
+            **fox,
             "risk_level": risk_level,
             "user_query": query,
             "show_popup": False,
@@ -204,6 +221,7 @@ def guardrail_node(state: AgentState) -> dict:
     else:
         # Attack → KHÔNG lưu
         return {
+            **fox,
             "risk_level": risk_level,
             "show_popup": True,
             "user_query": query,
@@ -224,6 +242,10 @@ def rejection_node(state: AgentState) -> dict:
     """
     
     query = state["user_query"]
+    if (state.get("guard") or {}).get("action") == "block":
+        # FOX already wrote the refusal; do not send the attack to the rejection LLM.
+        return {"final_answer": query, "show_popup": True, "input_tokens": 0, "output_tokens": 0,
+                "total_tokens": 0, "latency": 0}
 
     result = rejection_call.invoke(query)
 
@@ -280,6 +302,8 @@ def master_node(state: AgentState) -> dict:
             break
 
     full_messages = [{"role": "system", "content": FULL_MASTER_PROMPT}]
+    if state.get("guard_harden"):
+        full_messages.append({"role": "system", "content": state["guard_harden"]})
     user_count = 0
     for msg in state["messages"]:
         role = msg.get("role") if isinstance(msg, dict) else getattr(msg, "type", "")
@@ -314,7 +338,8 @@ def master_node(state: AgentState) -> dict:
 
     assistant_msg = {
         "role": "assistant",
-        "content": result["content"]
+        # Restored PII must not re-enter the LLM context next turn (see master_agent).
+        "content": result.get("history_content", result["content"])
     }
 
     conversation_state = state.get("conversation_state") or {}
@@ -327,8 +352,10 @@ def master_node(state: AgentState) -> dict:
     if not found_new_search and last_search_record:
         conversation_state["last_product_search"] = last_search_record
 
+    output_id = result.get("output_decision_id")
     return {
         "final_answer": result["content"],
+        "guard_decision_ids": [*(state.get("guard_decision_ids") or []), *([output_id] if output_id else [])],
         "skill_name": skill_name,
         "intent": skill_name,
         "messages": [assistant_msg],
