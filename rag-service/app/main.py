@@ -107,11 +107,14 @@ async def chat_endpoint(request: ChatRequest, authorization: Optional[str] = Hea
             guard_decision_ids=result.get("guard_decision_ids") or [],
         )
 
+        verdict = result.get("guard") or {}
         return ChatResponse(
             reply=final_answer,
             tool_used=tool_used,
             sources=cited_sources,
-            session_id=session_id
+            session_id=session_id,
+            guard=GuardResponse(action=verdict.get("action") or "allow", decision_id=verdict.get("decision_id"),
+                                flags=list(verdict.get("flags") or [])),
         )
     except Exception as e:
         print(f"[ERROR] Chat endpoint failed: {str(e)}")

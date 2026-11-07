@@ -106,7 +106,10 @@ def test_enabled_guard_logs_only_guard_redacted_messages(backend, monkeypatch, r
 
 def test_enabled_guard_without_log_redaction_writes_nothing(backend, monkeypatch, recorded_logs, caplog):
     m = importlib.import_module("src.chat_logging")
-    monkeypatch.setenv("FOX_GUARD_MODE", "inproc")
+    # Guard enabled but unreachable (sidecar down): fail closed, write nothing.
+    monkeypatch.setenv("FOX_GUARD_MODE", "sidecar")
+    monkeypatch.setenv("FOX_GUARD_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("FOX_GUARD_TIMEOUT", "0.5")
     assert not m.write_chat_turn(session_id="s", user_id=None, user_message="raw PII",
         agent_message="raw PII", tool_calls=[], risk_level="safe", guard_decision_ids=[])
     assert recorded_logs == ([], [])
